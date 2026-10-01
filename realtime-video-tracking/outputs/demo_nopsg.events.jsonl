@@ -1,0 +1,8 @@
+{"kind": "event", "t": 4.733, "frame": 142, "type": "ACCIDENT", "detail": "collision-like overlap IoU=0.41", "zone": null, "track_ids": [1, 2], "score": 1.0}
+{"kind": "event", "t": 9.867, "frame": 296, "type": "JAM", "detail": "1 congested zone(s), slowest 0 px/s zones=[(3, 0)]", "zone": null, "track_ids": [], "score": 1.0}
+{"kind": "event", "t": 9.867, "frame": 296, "type": "JAM_ORIGIN", "detail": "queue started here at t=5.9s", "zone": [3, 0], "track_ids": [], "score": 1.0}
+{"kind": "event", "t": 11.267, "frame": 338, "type": "JAM_FRONT", "detail": "queue head / flow resumes", "zone": [3, 1], "track_ids": [], "score": 1.0}
+{"kind": "event", "t": 19.667, "frame": 590, "type": "JAM_FRONT", "detail": "queue head / flow resumes", "zone": [3, 1], "track_ids": [], "score": 1.0}
+{"kind": "event", "t": 25.733, "frame": 772, "type": "JAM_FRONT", "detail": "queue head / flow resumes", "zone": [3, 1], "track_ids": [], "score": 1.0}
+{"kind": "event", "t": 27.0, "frame": 810, "type": "PED_CONFLICT", "detail": "person#99 in roadway with 2 vehicles", "zone": [4, 1], "track_ids": [99], "score": 1.0}
+{"kind": "event", "t": 31.733, "frame": 952, "type": "JAM_FRONT", "detail": "queue head / flow resumes", "zone": [3, 1], "track_ids": [], "score": 1.0}

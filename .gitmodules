@@ -1,0 +1,3 @@
+[submodule "third_party/openpsg"]
+	path = third_party/openpsg
+	url = https://github.com/Jingkang50/OpenPSG.git

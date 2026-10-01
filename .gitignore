@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+pytest-cache-files-*/
+
+# Virtual environments — rebuilt on local disk in D:\envs, never commit
+.venv/
+.venv-infer/
+
+# Model weights: auto-downloaded (YOLO) or SHA-verified separately (PSGTR
+# checkpoint lives in third_party/openpsg/work_dirs/checkpoints/ inside the
+# submodule and is not tracked here)
+*.pt
+*.pth
+
+# Legacy empty stub dirs at repo root; real outputs live in
+# realtime-video-tracking/outputs/
+/outputs/
+
+# Editors / OS
+.idea/
+.vscode/
+Thumbs.db
