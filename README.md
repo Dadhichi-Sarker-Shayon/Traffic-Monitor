@@ -95,6 +95,15 @@ Measured on an NVIDIA GTX 1650 (4 GB).
 | `accident_intersection.mp4` — busy junction, real crash | 833 | 9 events: accident (IoU 0.89 @1.5s), 3× jam each with its origin, queue front, stopped vehicle @15.5s; 32 scene-graph frames |
 | `tiltshift_traffic.mp4` — high-angle, 7–12 vehicles/frame | 1770 | 70 scene-graph frames, **0 events** — traffic keeps flowing, so there is nothing to report. 2.7 fps |
 | `demo_traffic.mp4` — synthetic, known ground truth | 40s | accident @4.7s (IoU 0.41), jam + origin @9.9s, pedestrian conflict @27s, no false positives |
+| `accident_street.mp4` — street level, sparse traffic | 721 | 25 scene-graph frames, 0 events — only 0.6 vehicles/frame, below the density the jam and collision rules need |
+| `aerial_traffic.mp4` — true top-down drone | 1452 | 56 scene-graph frames, **0 vehicles tracked** — the annotated output shows the empty result |
+| `drone_traffic.mp4` — very high altitude | 375 | 12 scene-graph frames, **0 vehicles tracked** |
+
+Every clip in `sample_media/clips/` has a matching annotated video and event log
+in `outputs/`, so each claim above can be checked without re-running anything.
+The two aerial outputs are worth watching specifically: they are the visual
+counterpart to the limitation below — the overlays render, the HUD and zones
+draw, and not a single track box appears.
 
 Sample scene graph from the high-angle run:
 
@@ -189,6 +198,10 @@ test for the transient-overlap accident case — with no GPU or model required.
   overlap after fast motion, not from visual damage — it will not catch a crash
   where the vehicles separate cleanly, and dense parking can still look
   accident-like.
+- The rules need traffic density to work on: a jam needs ≥3 vehicles in a zone
+  and a collision needs two overlapping ones, so sparse scenes stay silent by
+  design. `accident_street.mp4` is the example — a real street scene that the
+  detector only finds 0.6 vehicles per frame in.
 - Speeds are in pixels per second unless `--px-per-meter` calibration is given.
 - The OpenPSG dependency chain (mmcv 1.x / mmdet 2.x / torch 1.13) is pinned to
   an older CUDA stack; newer GPUs need a rebuild of those wheels.
