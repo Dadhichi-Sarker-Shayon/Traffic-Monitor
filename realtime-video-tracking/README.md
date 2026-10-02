@@ -14,6 +14,8 @@ video file / webcam / RTSP
    │      "car driving on road", "person crossing", road/pavement/sky stuff masks
    ├─ EventEngine ───────────────── jam / jam origin / queue head / accident /
    │                                stopped vehicle / pedestrian conflict
+   ├─ VLM adjudicator (optional) ─ second opinion on fired events (--vlm);
+   │                                can veto, never invents
    └─ Overlay + JSONL log ───────── everything burned into the output video
 ```
 
@@ -29,13 +31,14 @@ traffic_watch/
   detector.py   YOLOv8 + ByteTrack wrapper (COCO vehicles/persons)
   psg.py        OpenPSG PSGTR adapter (mmdet 2.x) + threaded runner
   events.py     EventEngine: all decision heuristics (pure, tested)
+  adjudicator.py  optional VLM second opinion (verification-only, never raises)
   overlays.py   zones, masks, relation edges, tracks, event banners
   __main__.py   CLI
 tools/
   make_demo_video.py   synthetic 40s clip: crash @4s, jam, pedestrian @22-30s
   psg_smoke.py         one-frame OpenPSG check
   yolo_smoke.py        YOLO recall vs ground truth
-tests/test_events.py   event-engine unit tests
+tests/               event-engine, adjudicator, PSG parsing, live-pipeline tests
 ```
 
 ## Environments (Windows)
@@ -74,11 +77,20 @@ python -m traffic_watch --source rtsp://... --show   # IP camera
 ```
 
 Outputs: annotated `*.mp4` + `<name>.events.jsonl` (one JSON object per
-event / PSG frame: `t`, `frame`, `type`, `detail`, `zone`, `track_ids`).
+event / PSG frame: `t`, `frame`, `type`, `detail`, `zone`, `track_ids`,
+and for events an `evidence` dict with the facts behind the decision —
+IoU, Δv, speeds and peaks for collisions, zone speeds for jams, stop
+duration for stopped vehicles, and so on).
 
 Useful flags: `--psg-interval N` (0 = off), `--no-psg`, `--num-rel`,
+`--psg-rel-thresh` (minimum relation score), `--psg-classes` (comma list;
+default is the traffic-relevant set, empty string = all),
 `--grid-cols/--grid-rows/--roi-top` (zone layout), `--px-per-meter`
 (calibration → km/h instead of px/s), `--device cpu`.
+
+Trust-tuning flags: `--conf/--iou` (YOLO confidence / NMS IoU),
+`--collision-dv` (speed drop a collision overlap must show, px/s,
+default 25), `--vlm` + `--vlm-model` (see below).
 
 ## How decisions are made
 
@@ -87,7 +99,7 @@ Useful flags: `--psg-interval N` (0 = off), `--no-psg`, `--num-rel`,
 | `JAM` | zone with ≥3 vehicles and median speed < 18 px/s, held ≥4s |
 | `JAM_ORIGIN` | jammed zone whose onset is clearly earliest → the queue's start |
 | `JAM_FRONT` | adjacent zone still flowing → where the queue ends |
-| `ACCIDENT` | two vehicles overlapping while both just stopped after fast motion **and the overlap persists ≥0.6s**, **or** zone speed collapse (≥65%) with stable vehicle count (queue growth excluded) |
+| `ACCIDENT` | two vehicles overlapping while both just stopped after fast motion **and** the overlap persists ≥0.6s **and** at least one of them decelerated abruptly (Δv ≥ `--collision-dv`, 25 px/s within 0.5s) — overlap without a speed jump is a merge or queue bumper, not an impact; **or** zone speed collapse (≥65%) with stable vehicle count (queue growth excluded) |
 | `STOPPED` | vehicle stationary ≥8s in an *active* flow — suppressed inside jams / nose-to-tail queues |
 | `PED_CONFLICT` | person in a roadway zone with ≥2 vehicles, evidence accumulated ≥1s |
 
@@ -99,7 +111,31 @@ The persistence requirement on `ACCIDENT` is not cosmetic: in dense traffic
 shot from above, neighbouring cars overlap for a frame or two all the time
 (detector box jitter, tracker ID swaps). Firing on the first overlapping frame
 produced two phantom accidents on the aerial clip below; requiring the overlap
-to hold for `collision_persist_s` removed both.
+to hold for `collision_persist_s` removed both. The Δv requirement removes
+the remaining false positive: two cars that gently merge (or a queue bumper
+that taps the car ahead) overlap and stop, but neither shows the velocity
+discontinuity of an impact.
+
+### VLM adjudication (`--vlm`)
+
+The engine *proposes*; a vision-language model can *check*. With `--vlm`,
+every fired event is cropped (bbox + 15% pad) and shown to the model
+(default `Qwen/Qwen2.5-VL-7B-Instruct`, any image-to-text VLM works via
+`--vlm-model`) together with a fixed yes/no question for the event type.
+
+Adjudication is a verification layer, never a trigger:
+
+- **agreement** → the event is reported, with the model's answer in `detail`
+- **veto** → the event is withdrawn (`engine.retract`) and logged as
+  `{"kind": "veto"}`; the rule may fire again after its normal cooldown,
+  so the model gets a second chance on the next frames
+- **no opinion** (model missing, load error, unparseable answer) →
+  passthrough, i.e. the previous behaviour; nothing is invented and no
+  real incident is silently dropped
+
+End of run prints `[vlm] N checked, N confirmed, N vetoed, N passthrough`.
+GPU inference is required for real use; on a machine without it the whole
+layer degrades to passthrough (which is the point).
 
 ## Dense traffic / high-angle test
 
