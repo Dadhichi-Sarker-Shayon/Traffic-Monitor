@@ -19,6 +19,12 @@ pytest-cache-files-*/
 # realtime-video-tracking/outputs/
 /outputs/
 
+# Eval set: the contact sheets and sampled copies are regenerable from the
+# clips with tools/make_eval_set.py, so only the labels and report are tracked.
+# ** matters: a pattern with a slash is anchored to this directory.
+**/eval/sheets/
+**/eval/samples/
+
 # Editors / OS
 .idea/
 .vscode/

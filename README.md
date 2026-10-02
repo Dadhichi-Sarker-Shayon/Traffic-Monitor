@@ -183,6 +183,58 @@ The suite feeds synthetic detection sequences into the event engine — jams tha
 grow versus jams that form, hysteresis clearing, empty frames, and a regression
 test for the transient-overlap accident case — with no GPU or model required.
 
+## Evaluation
+
+Unit tests prove the rules behave as coded. They cannot tell you whether the
+rules are *right*, so there is a second, measurement-based loop over real
+footage. It needs no GPU: the engine's answers are already in the JSONL logs.
+
+```bash
+python tools/make_eval_set.py     # 1. carve 6s windows + contact sheets out of the clips
+python tools/label_eval.py        # 2. label them (keyboard-only GUI, stays local)
+python tools/score_eval.py --report eval/report.md   # 3. precision/recall per rule
+```
+
+`make_eval_set.py` picks windows on purpose: one centred on every event the
+engine fired (these measure precision) plus evenly spaced ones elsewhere (these
+measure recall). Windows from the synthetic demo clip are auto-labelled from the
+constants in `tools/make_demo_video.py`, so human effort goes only to real
+footage.
+
+The scorer treats the two rule families differently, because they are different
+kinds of thing: `ACCIDENT` is an **instant** (did it fire inside the window),
+while `JAM` is a **state** (was it active during the window — reconstructed from
+the log's transitions). Real footage and the synthetic clip are scored in
+separate cohorts so flat graphics never flatter the numbers.
+
+## Decision log: why the engine is being reworked
+
+The current rules were found to be wrong on real footage, and the useful part
+is knowing *why*, because it rules out the obvious fix:
+
+- `ACCIDENT` is decided by box overlap plus speed history. Geometry cannot tell
+  a crash from two cars parking side by side, from a tracker ID swap, or from
+  cars passing on a narrow road. There is no notion of *visible damage* anywhere
+  in the code.
+- `JAM` measures centroid displacement in raw pixels per second and thresholds
+  it at 18 px/s. That is blind to scale: the same number means different things
+  at 720p and 4K, wide-angle and telephoto, 30 m and 80 m up. A car driving
+  *towards* the camera barely moves in the image and reads as stopped. It is
+  also not motion, only displacement, so detector jitter on a stationary car
+  looks like movement.
+- The event engine never sees the PSG road mask, so "cars standing on the road"
+  also counts parked cars, cars in a lot and cars on a pavement, and the fixed
+  6×3 frame grid cuts across roads whatever direction they run.
+- The engine is strictly causal: it fires from past frames only and can never
+  use the next second to confirm or retract.
+
+Fine-tuning the detector fixes none of these. The planned order is therefore:
+measure first (this section), then fix `JAM` with true motion, the road mask and
+calibrated thresholds plus a retrospective confirmation window, and only then
+add a damage-verification stage — locally, since this project runs offline on a
+4 GB card. Fine-tuning a small damage classifier becomes justified only if
+local zero-shot verification measures out badly.
+
 ## Known limitations
 
 - **True top-down drone footage does not work.** The COCO-trained detector
