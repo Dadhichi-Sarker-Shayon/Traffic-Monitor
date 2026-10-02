@@ -19,7 +19,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 
@@ -66,6 +66,25 @@ PREDICATES = [
     'riding', 'parked on', 'driving on', 'about to hit', 'kicking', 'swinging',
     'entering', 'exiting', 'enclosing', 'leaning on',
 ]
+
+# Traffic-monitoring view of the 133 panoptic classes. PSGTR segments
+# everything (trees, grass, buildings, fences, ...), which is its
+# panoptic job but clutter for a traffic monitor, so instances are
+# filtered to this set by default.
+TRAFFIC_CLASSES = frozenset({
+    "person", "bicycle", "car", "motorcycle", "bus", "truck",
+    "traffic light", "stop sign", "parking meter", "fire hydrant",
+    "road",
+})
+
+# Predicates that carry traffic meaning. PSGTR relation scores are
+# uncalibrated ("parked on" at 0.49 on a clearly moving car is
+# common), so relations are kept only above a score floor and only
+# for these predicates.
+TRAFFIC_PREDICATES = frozenset({
+    "walking on", "running on", "crossing", "driving", "driving on",
+    "riding", "parked on", "on", "in front of", "about to hit",
+})
 
 INSTANCE_OFFSET = 100000  # mmdet.datasets.coco_panoptic
 
@@ -167,6 +186,9 @@ class PSGRunner:
         num_rel: int = 12,           # relations kept per frame
         mask_size: int = 256,        # masks are stored downsampled to save RAM
         enabled: bool = True,
+        classes: Optional[Iterable[str]] = None,      # None: traffic set
+        predicates: Optional[Iterable[str]] = None,   # None: traffic set
+        rel_thresh: float = 0.55,    # minimum relation score
     ):
         self.cfg_path = Path(cfg_path)
         self.ckpt_path = Path(ckpt_path)
@@ -175,6 +197,10 @@ class PSGRunner:
         self.num_rel = num_rel
         self.mask_size = mask_size
         self.enabled = enabled
+        self.classes = frozenset(classes) if classes is not None else TRAFFIC_CLASSES
+        self.predicates = (frozenset(predicates)
+                           if predicates is not None else TRAFFIC_PREDICATES)
+        self.rel_thresh = rel_thresh
         self.model = None
         self._lock = threading.Lock()
         self._pending = None          # (frame_index, t, image)
@@ -268,7 +294,9 @@ class PSGRunner:
         raw = inference_detector(self.model, image_bgr)
         ms = (time.perf_counter() - t0) * 1000.0
         return parse_psgtr_result(raw, image_bgr.shape[:2], t=t, frame_index=frame_index, infer_ms=ms,
-                                  num_rel=self.num_rel, mask_size=self.mask_size)
+                                  num_rel=self.num_rel, mask_size=self.mask_size,
+                                  classes=self.classes, predicates=self.predicates,
+                                  rel_thresh=self.rel_thresh)
 
 
 def parse_psgtr_result(
@@ -280,7 +308,13 @@ def parse_psgtr_result(
     infer_ms: float,
     num_rel: int = 12,
     mask_size: int = 256,
+    classes: Optional[Iterable[str]] = None,
+    predicates: Optional[Iterable[str]] = None,
+    rel_thresh: float = 0.55,
 ) -> PSGResult:
+    cls_set = frozenset(classes) if classes is not None else TRAFFIC_CLASSES
+    pred_set = (frozenset(predicates)
+                if predicates is not None else TRAFFIC_PREDICATES)
     """Convert the mmdet 2.x PSGTR output (SegDataChunk-like) into PSGResult.
 
     Field layout follows the official demo (utils.py): ``pan_results``
@@ -307,6 +341,8 @@ def parse_psgtr_result(
         cls_id = int(lb) - 1  # PSGTR labels are 1-based (0 == background)
         if not (0 <= cls_id < len(CLASSES)) or CLASSES[cls_id] == "background":
             continue
+        if CLASSES[cls_id] not in cls_set:
+            continue
         ys, xs = np.nonzero(m)
         if len(ys) == 0:
             continue
@@ -325,7 +361,8 @@ def parse_psgtr_result(
     kept = []
     for i, lb in enumerate(labels):
         cls_id = int(lb) - 1
-        if 0 <= cls_id < len(CLASSES) and CLASSES[cls_id] != "background":
+        if (0 <= cls_id < len(CLASSES) and CLASSES[cls_id] != "background"
+                and CLASSES[cls_id] in cls_set):
             kept.append(i)
     for new_i, old_i in enumerate(kept):
         remap[old_i] = new_i
@@ -342,6 +379,8 @@ def parse_psgtr_result(
         if k > 0:
             top = np.argpartition(best, -k)[-k:]
             for r in top:
+                if best[r] < rel_thresh:
+                    continue
                 s, o = int(pairs[r][0]), int(pairs[r][1])
                 if s not in remap or o not in remap or remap[s] < 0 or remap[o] < 0:
                     continue
@@ -349,6 +388,8 @@ def parse_psgtr_result(
                     continue
                 pred_id = int(rel_scores[r].argmax())
                 if not (0 <= pred_id < len(PREDICATES)):
+                    continue
+                if PREDICATES[pred_id] not in pred_set:
                     continue
                 out.relations.append(
                     Relation(s=remap[s], o=remap[o], predicate=PREDICATES[pred_id],

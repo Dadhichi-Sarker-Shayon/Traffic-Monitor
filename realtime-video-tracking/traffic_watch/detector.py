@@ -33,8 +33,8 @@ class Detector:
         self,
         weights: str = "yolov8s.pt",
         device: Optional[str] = None,
-        conf: float = 0.35,
-        iou: float = 0.5,
+        conf: float = 0.4,
+        iou: float = 0.6,
         max_det: int = 100,
         half: bool = True,
     ):
