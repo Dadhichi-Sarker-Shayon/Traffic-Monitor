@@ -20,7 +20,7 @@ from .detector import Detector
 from .events import EngineConfig, EventEngine
 from .motion import MotionMeter
 from .overlays import draw_events, draw_psg, draw_tracks, draw_zones, _put_label
-from .psg import PSGRunner, road_mask_of
+from .psg import CLASSES, PSGRunner, road_mask_of
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -31,13 +31,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--show", action="store_true", help="live preview window")
     p.add_argument("--device", default="cuda:0", help="inference device (cuda:0 / cpu)")
     p.add_argument("--weights", default="yolov8s.pt", help="YOLO weights")
-    p.add_argument("--conf", type=float, default=0.35, help="YOLO confidence")
+    p.add_argument("--conf", type=float, default=0.4, help="YOLO confidence")
+    p.add_argument("--iou", type=float, default=0.6, help="YOLO NMS IoU")
     p.add_argument("--detections", default=None,
                    help="ground-truth detections JSONL (bypasses YOLO, deterministic demo)")
     p.add_argument("--max-frames", type=int, default=None, help="stop after N frames")
     p.add_argument("--psg-interval", type=int, default=30, help="run OpenPSG every N frames (0=off)")
     p.add_argument("--no-psg", action="store_true", help="disable the OpenPSG scene layer")
     p.add_argument("--num-rel", type=int, default=12, help="relations kept per PSG frame")
+    p.add_argument("--psg-rel-thresh", type=float, default=0.55,
+                   help="minimum PSG relation score")
+    p.add_argument("--psg-classes", default=None,
+                   help="comma-separated PSG instance classes to keep "
+                        "(default: traffic set; empty string = all)")
     p.add_argument("--px-per-meter", type=float, default=None, help="calibration: px per meter (enables km/h)")
     p.add_argument("--grid-cols", type=int, default=6)
     p.add_argument("--grid-rows", type=int, default=3)
@@ -53,6 +59,13 @@ def build_parser() -> argparse.ArgumentParser:
                    help="seconds a jam candidate must survive before it is reported")
     p.add_argument("--confirm-accident", type=float, default=1.5,
                    help="seconds an accident candidate must survive before it is reported")
+    p.add_argument("--collision-dv", type=float, default=None,
+                   help="px/s speed drop that must accompany a collision overlap")
+    p.add_argument("--vlm", action="store_true",
+                   help="adjudicate fired events with a vision-language model "
+                        "(second opinion; can veto, never invents)")
+    p.add_argument("--vlm-model", default="Qwen/Qwen2.5-VL-7B-Instruct",
+                   help="model id for --vlm (any image-to-text VLM)")
     p.add_argument("--no-road-mask", dest="road_mask", action="store_false",
                    help="ignore the OpenPSG road mask when counting vehicles in zones")
     return p
@@ -74,21 +87,39 @@ def main(argv=None) -> int:
         print(f"[detector] ground truth from {args.detections} ({len(gt)} frames)")
         det = None
     else:
-        det = Detector(weights=args.weights, device=args.device, conf=args.conf)
+        det = Detector(weights=args.weights, device=args.device,
+                       conf=args.conf, iou=args.iou)
+    engine_kw = {}
+    if args.collision_dv is not None:
+        engine_kw["collision_dv_px_s"] = args.collision_dv
     cfg = EngineConfig(grid_cols=args.grid_cols, grid_rows=args.grid_rows, roi_top_frac=args.roi_top,
                        jam_speed_mode=args.jam_speed_mode,
                        jam_speed_rel_frac=args.jam_speed_rel_frac,
                        px_per_meter=args.px_per_meter,
                        confirm_jam_s=args.confirm_jam,
-                       confirm_accident_s=args.confirm_accident)
+                       confirm_accident_s=args.confirm_accident,
+                       **engine_kw)
     engine = EventEngine(cfg, frame_shape=(src.height, src.width))
+
+    adjudicator = None
+    if args.vlm:
+        from .adjudicator import VLMAdjudicator
+        adjudicator = VLMAdjudicator(model_id=args.vlm_model, device=args.device)
+        print(f"[vlm] adjudicating events with {args.vlm_model}")
     meter = MotionMeter()
 
+    psg_classes = None
+    if args.psg_classes is not None:
+        # empty string explicitly asks for every class
+        psg_classes = set(CLASSES) if not args.psg_classes \
+            else set(args.psg_classes.split(","))
     psg = PSGRunner(
         device=args.device,
         interval=0 if args.no_psg else args.psg_interval,
         num_rel=args.num_rel,
         enabled=not args.no_psg,
+        classes=psg_classes,
+        rel_thresh=args.psg_rel_thresh,
     )
     psg.start()
 
@@ -108,6 +139,29 @@ def main(argv=None) -> int:
     def log(obj):
         if log_f:
             log_f.write(json.dumps(obj, ensure_ascii=False) + "\n")
+
+    def report(ev, t, frame_idx, image, note=None):
+        """Adjudicate (when --vlm), log and print one fired event."""
+        if adjudicator is not None and image is not None:
+            verdict = adjudicator.verify(image, ev)
+            if not verdict.agrees:
+                engine.retract(ev.key)
+                log({"kind": "veto", "t": round(t, 3), "frame": frame_idx,
+                     "type": ev.type, "detail": ev.detail, "note": verdict.note})
+                print(f"[veto]  t={t:7.2f}s  {ev.type:14s} {verdict.note}")
+                return
+            if not verdict.passthrough:
+                ev.detail = ev.detail + f" [vlm: {verdict.note}]"
+        rec = {"kind": "event", "t": round(t, 3), "frame": frame_idx,
+               "type": ev.type, "detail": ev.detail, "zone": ev.zone,
+               "track_ids": list(ev.track_ids), "score": round(ev.score, 2)}
+        if note:
+            rec["note"] = note
+        if ev.evidence:
+            rec["evidence"] = ev.evidence
+        log(rec)
+        suffix = f"  ({note})" if note else ""
+        print(f"[event] t={t:7.2f}s  {ev.type:14s} {ev.detail}{suffix}")
 
     show = args.show
     fps_ema = 0.0
@@ -160,10 +214,7 @@ def main(argv=None) -> int:
             _put_label(img, hud, (8, img.shape[0] - 10), (255, 255, 255), scale=0.5, bg=(25, 25, 25))
 
             for ev in fired:
-                log({"kind": "event", "t": round(frame.t, 3), "frame": frame.index,
-                     "type": ev.type, "detail": ev.detail, "zone": ev.zone,
-                     "track_ids": list(ev.track_ids), "score": round(ev.score, 2)})
-                print(f"[event] t={frame.t:7.2f}s  {ev.type:14s} {ev.detail}")
+                report(ev, frame.t, frame.index, img)
             if res is not None and res.frame_index >= 0 and res.frame_index != last_psg_logged:
                 last_psg_logged = res.frame_index
                 log({"kind": "psg", "t": round(res.t, 3), "frame": res.frame_index,
@@ -200,16 +251,18 @@ def main(argv=None) -> int:
     # candidates still alive at end of stream: confirm them, or the last
     # `confirm_*` seconds of every clip would silently vanish
     for ev in engine.finalize(last_frame_t):
-        log({"kind": "event", "t": round(ev.t, 3), "frame": n, "type": ev.type,
-             "detail": ev.detail, "zone": ev.zone, "track_ids": list(ev.track_ids),
-             "score": round(ev.score, 2), "note": "confirmed at end of stream"})
-        print(f"[event] t={ev.t:7.2f}s  {ev.type:14s} {ev.detail}  (end-of-stream confirm)")
+        report(ev, ev.t, n, img if n else None, note="confirmed at end of stream")
     print(f"[done] {n} frames in {dur:.1f}s ({n / max(dur, 1e-6):.1f} fps)")
     if out_path:
         print(f"[done] annotated video: {out_path}")
     print(f"[done] events fired: {len(engine.history)}")
     if psg.last_error:
         print(f"[psg] last error: {psg.last_error}")
+    if adjudicator is not None:
+        print(f"[vlm] {adjudicator.calls} checked, {adjudicator.agreements} confirmed, "
+              f"{adjudicator.vetoes} vetoed, {adjudicator.passthroughs} passthrough")
+        if adjudicator.last_error:
+            print(f"[vlm] last error: {adjudicator.last_error}")
     return 0
 
 

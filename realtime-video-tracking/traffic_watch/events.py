@@ -73,6 +73,11 @@ class EngineConfig:
     collision_iou: float = 0.25
     collision_min_speed: float = 60.0   # px/s before impact
     collision_persist_s: float = 0.6
+    # An impact is a discontinuity: speed collapses within a few
+    # frames. Overlap without such a jump is a merge or a queue
+    # bumper, so the largest recent per-0.5s speed drop must clear
+    # this bar before overlap reads as a collision.
+    collision_dv_px_s: float = 25.0
     collapse_drop_frac: float = 0.65    # median speed drops by 65%+
     collapse_min_before: float = 55.0   # ... from at least this speed
     collapse_persist_s: float = 1.5
@@ -154,6 +159,8 @@ class Event:
     bbox: Optional[Tuple[float, float, float, float]] = None
     provisional: bool = False  # seen, but still waiting for future frames
     held_s: float = 0.0        # how long the candidate held before it was reported
+    key: str = ""              # engine key (for retracting a vetoed event)
+    evidence: dict = field(default_factory=dict)  # auditable why-it-fired facts
 
 
 # --------------------------------------------------------------------------- #
@@ -174,6 +181,8 @@ class _Track:
     cls: str
     hist: Deque[Tuple[float, float, float]] = field(default_factory=deque)  # t, cx, cy
     boxes: Deque[Tuple[float, Tuple[float, float, float, float]]] = field(default_factory=deque)
+    raw_speeds: Deque[Tuple[float, float]] = field(default_factory=deque)  # t, |v|
+    dv_max: float = 0.0  # largest abrupt speed drop seen recently
     speed: float = 0.0            # EMA smoothed px/s
     peak: float = 0.0             # decaying recent peak (evidence of motion)
     stopped_in_jam: bool = False  # stop happened inside a jam -> not an incident
@@ -196,6 +205,8 @@ class _Track:
             if dt > 1e-3:
                 v = math.hypot(cx - x0, cy - y0) / dt
                 self.speed = cfg.speed_ema * v + (1.0 - cfg.speed_ema) * self.speed
+                self.raw_speeds.append((t, v))
+                self._update_dv(t)
         self.peak = max(self.peak * 0.985, self.speed)  # ~3s memory of fast motion
         self.hist.append((t, cx, cy))
         self.boxes.append((t, box))
@@ -203,6 +214,8 @@ class _Track:
         # trim
         while self.hist and t - self.hist[0][0] > cfg.history_s:
             self.hist.popleft()
+        while self.raw_speeds and t - self.raw_speeds[0][0] > cfg.history_s:
+            self.raw_speeds.popleft()
         while self.boxes and t - self.boxes[0][0] > cfg.history_s:
             self.boxes.popleft()
         if self.speed < cfg.stopped_min_speed:
@@ -234,6 +247,30 @@ class _Track:
         if self.motion_ema < cfg.motion_still_thresh and self.speed < cfg.jitter_speed_px_s:
             return 0.0
         return self.speed
+
+    def _update_dv(self, t: float) -> None:
+        """Track the largest speed drop across any 0.5s of recent samples.
+
+        The scan keeps a running maximum, so it is the biggest drop from
+        any earlier sample to any later one inside the span - exactly the
+        "how fast did it fall" of a discontinuity. It decays slowly so the
+        evidence is still there when the overlap condition is met a few
+        frames (and one EMA time-constant) later.
+        """
+        drop = 0.0
+        run_max = 0.0
+        for tt, v in self.raw_speeds:
+            if tt < t - 0.5:
+                continue
+            if v > run_max:
+                run_max = v
+            elif run_max - v > drop:
+                drop = run_max - v
+        self.dv_max = max(drop, self.dv_max * 0.99)
+
+    def delta_v(self) -> float:
+        """Abrupt deceleration (px/s) seen in the last few seconds."""
+        return self.dv_max
 
 
 # --------------------------------------------------------------------------- #
@@ -448,6 +485,10 @@ class EventEngine:
                 zone=None,
                 detail=f"{len(jammed_now)} congested zone(s)"
                 + (f", slowest {_median([z.median_speed for z in jammed_now.values()]):.0f} px/s" if jammed_now else ""),
+                evidence=(
+                    {"slowest_px_s": round(_median([z.median_speed for z in jammed_now.values()]), 1)}
+                    if jammed_now else {}
+                ),
             ),
             extra_zones=set(jammed_now),
         )
@@ -516,14 +557,25 @@ class EventEngine:
                 iou = iou_xyxy(a.box, b.box)
                 if iou >= cfg.collision_iou and max(a.speed, b.speed) < cfg.jam_speed_px_s \
                         and max(a.peak, b.peak) >= cfg.collision_min_speed * 0.5:
-                    # boxes overlap, both stopped now, but they were moving
-                    # fast very recently -> impact-like
+                    dv = max(a.delta_v(), b.delta_v())
+                    if dv < cfg.collision_dv_px_s:
+                        # overlap without a velocity jump: a merge or a
+                        # queue bumper, not an impact
+                        continue
+                    # boxes overlap, both stopped now, they were moving fast
+                    # recently AND their speed collapsed abruptly -> impact
                     collision = Event(
                         type="ACCIDENT",
                         t=t,
                         track_ids=(a.tid, b.tid),
-                        detail=f"collision-like overlap IoU={iou:.2f}",
+                        detail=f"collision-like overlap IoU={iou:.2f}, dv={dv:.0f}px/s",
                         bbox=_union_box(a.box, b.box),
+                        evidence={
+                            "iou": round(iou, 2),
+                            "dv_px_s": round(dv, 1),
+                            "speeds_px_s": (round(a.speed, 1), round(b.speed, 1)),
+                            "peaks_px_s": (round(a.peak, 1), round(b.peak, 1)),
+                        },
                     )
                     break
             if collision:
@@ -554,6 +606,11 @@ class EventEngine:
                         t=t,
                         zone=key,
                         detail=f"speed collapsed {before:.0f}->{recent:.0f} px/s",
+                        evidence={
+                            "before_px_s": round(before, 1),
+                            "recent_px_s": round(recent, 1),
+                            "drop_frac": round(cfg.collapse_drop_frac, 2),
+                        },
                     )
                     break
 
@@ -622,6 +679,7 @@ class EventEngine:
                     track_ids=(tr.tid,),
                     detail=f"{tr.cls}#{tr.tid} stationary {dur:.1f}s in active traffic",
                     bbox=tr.box,
+                    evidence={"stopped_s": round(dur, 1), "speed_px_s": round(tr.speed, 1)},
                 ),
                 cool_down_override=12.0,
             )
@@ -709,6 +767,7 @@ class EventEngine:
             if (t - pend.first_seen >= need and t - self._last_fired[key] >= cool
                     and pend.event is not None):
                 ev = pend.event
+                ev.key = key
                 ev.provisional = False
                 ev.held_s = round(t - pend.first_seen, 3)
                 self.active[key] = ev
@@ -724,6 +783,16 @@ class EventEngine:
                 self._pending.pop(key, None)
             if was and cur < cfg.event_off:
                 del self.active[key]
+
+    def retract(self, key: str) -> None:
+        """Withdraw a fired event (e.g. a VLM adjudicator veto).
+
+        The score resets so the rule can fire again after its normal
+        cooldown, giving the vetoed decision a second chance on the
+        next frames.
+        """
+        self.active.pop(key, None)
+        self._scores[key] = 0.0
 
     # ------------------------------------------------------ confirmation api
     def provisional_events(self) -> List[Event]:
@@ -742,6 +811,7 @@ class EventEngine:
             if t - pend.last_seen > 1e-6 or pend.event is None:
                 continue
             ev = pend.event
+            ev.key = key
             ev.provisional = False
             ev.held_s = round(t - pend.first_seen, 3)
             self.active[key] = ev

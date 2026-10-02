@@ -300,3 +300,63 @@ def test_auto_threshold_follows_the_clip_speed():
 def test_metric_threshold_uses_the_calibration():
     eng = make_engine(jam_speed_mode="metric", px_per_meter=20.0, jam_speed_mps=2.0)
     assert eng.jam_threshold_px_s() == pytest.approx(40.0)
+
+
+# --------------------------------------------------------------------------- #
+# velocity discontinuity: an impact is abrupt, a merge is not
+# --------------------------------------------------------------------------- #
+def test_delta_v_spikes_on_abrupt_stop():
+    eng = make_engine()
+    t = 0.0
+    for i in range(30):  # 90 px/s, then a dead stop
+        t = i * 0.1
+        x = 100 + i * 9 if i < 15 else 100 + 15 * 9
+        step(eng, t, [det(1, "car", x, 550)])
+    assert eng.tracks[1].delta_v() >= 60, eng.tracks[1].dv_max
+
+
+def test_delta_v_stays_low_for_gradual_braking():
+    eng = make_engine()
+    t = 0.0
+    for i in range(60):  # linear brake 90 -> 0 px/s over 6s
+        t = i * 0.1
+        x = 100 + 90 * t - 7.5 * t * t
+        step(eng, t, [det(1, "car", x, 550)])
+    assert eng.tracks[1].delta_v() < 25, eng.tracks[1].dv_max
+
+
+def test_gentle_merge_with_overlap_does_not_fire_accident():
+    """Overlap + both stopped + was fast is not enough without a
+    velocity jump: braking gently into a slight overlap is a merge."""
+    eng = make_engine()
+    t = 0.0
+    for i in range(110):  # 11s
+        t = i * 0.1
+        if i < 20:
+            # car 1 cruises at 90 px/s; car 2 parked ahead
+            dets = [det(1, "car", 100 + i * 9, 550), det(2, "car", 584, 552)]
+        else:
+            # gentle 6s brake (90 -> 0 px/s) into a slight overlap
+            k = (i - 20) * 0.1
+            x = 280 + 90 * k - 7.5 * k * k
+            dets = [det(1, "car", x, 550), det(2, "car", 584, 552)]
+        step(eng, t, dets)
+    assert "ACCIDENT" not in fired_types(eng)
+
+
+def test_abrupt_stop_with_overlap_fires_accident():
+    eng = make_engine()
+    t = 0.0
+    for i in range(75):
+        t = i * 0.1
+        if i < 40:
+            # car 1 cruises at 90 px/s toward a parked car
+            dets = [det(1, "car", 100 + i * 9, 550), det(2, "car", 500, 552)]
+        else:
+            # brakes dead, overlapping the parked car (IoU ~0.31)
+            dets = [det(1, "car", 470, 550), det(2, "car", 500, 552)]
+        step(eng, t, dets)
+    fired = [e for e in eng.active_events if e.type == "ACCIDENT"]
+    assert fired, "expected ACCIDENT for an abrupt stop with overlap"
+    assert fired[0].evidence.get("dv_px_s", 0) >= 25
+    assert 1 in fired[0].track_ids and 2 in fired[0].track_ids
