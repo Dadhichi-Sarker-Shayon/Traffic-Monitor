@@ -105,9 +105,11 @@ def test_pedestrian_conflict_in_roadway():
 
 
 def test_collision_like_overlap_fires_accident():
+    # the crash is now confirmed against future frames (confirm_accident_s=1.5
+    # on top of collision_persist_s=0.6), so the wreck has to be held for ~2.1s
     eng = make_engine()
     t = 0.0
-    for i in range(30):
+    for i in range(45):
         t = i * 0.1
         if i < 10:
             # two cars approaching fast (moving 90px / 0.1s = 900 px/s)
@@ -157,3 +159,144 @@ def test_engine_survives_empty_frames():
     for i in range(10):
         eng.update(i * 0.1, [])
     assert eng.active_events == []
+
+
+# --------------------------------------------------------------------------- #
+# retrospective confirmation: a candidate has to survive future frames
+# --------------------------------------------------------------------------- #
+def test_candidate_is_not_reported_before_the_confirmation_window():
+    eng = make_engine(jam_persist_s=0.5, confirm_jam_s=1.0)
+    t = 0.0
+    for i in range(20):
+        t = i * 0.2
+        step(eng, t, [det(j, "car", 100 + j * 60, 600) for j in range(1, 5)])
+        if t < 1.0:
+            assert "JAM" not in fired_types(eng), "fired before the window elapsed"
+    assert "JAM" in fired_types(eng)
+
+
+def test_candidate_that_dissolves_is_retracted_silently():
+    """The whole point: seeing the next frames can cancel a decision.
+
+    Congestion lasts 2.0s: long enough to satisfy jam_persist_s=0.5 and become
+    a candidate, far short of confirm_jam_s=3.0, so the queue dissolving has to
+    retract it before it is ever reported.
+    """
+    eng = make_engine(jam_persist_s=0.5, confirm_jam_s=3.0)
+    t = 0.0
+    for i in range(10):  # 0.0 - 1.8s of congestion -> candidate only
+        t = i * 0.2
+        step(eng, t, [det(j, "car", 100 + j * 60, 600) for j in range(1, 5)])
+    assert len(eng.history) == 0, "reported before it was confirmed"
+    assert eng.provisional_events(), "should still be a provisional candidate"
+    for i in range(30):  # road clears before the window elapses
+        t = 4 + i * 0.2
+        step(eng, t, [])
+    assert len(eng.history) == 0, "retracted candidate must never be reported"
+    assert not eng.provisional_events()
+
+
+def test_finalize_flushes_candidates_at_end_of_stream():
+    eng = make_engine(jam_persist_s=0.5, confirm_jam_s=5.0)
+    t = 0.0
+    for i in range(20):
+        t = i * 0.2
+        step(eng, t, [det(j, "car", 100 + j * 60, 600) for j in range(1, 5)])
+    assert len(eng.history) == 0
+    flushed = eng.finalize(t)
+    assert "JAM" in [e.type for e in flushed], flushed
+    assert "JAM" in fired_types(eng)
+
+
+def test_confirm_zero_restores_immediate_firing():
+    eng = make_engine(jam_persist_s=0.5, confirm_jam_s=0.0)
+    t = 0.0
+    for i in range(20):
+        t = i * 0.2
+        step(eng, t, [det(j, "car", 100 + j * 60, 600) for j in range(1, 5)])
+    assert "JAM" in fired_types(eng)
+
+
+# --------------------------------------------------------------------------- #
+# motion: displacement is not movement
+# --------------------------------------------------------------------------- #
+def det_moving(tid, cls, x, y, motion, w=60, h=40):
+    d = det(tid, cls, x, y, w, h)
+    d["motion"] = motion
+    return d
+
+
+def test_box_jitter_is_not_treated_as_motion():
+    """A stationary car whose box wanders must still count as standing still."""
+    eng = make_engine(confirm_jam_s=0.0)
+    t = 0.0
+    for i in range(40):
+        t = i * 0.2
+        dets = [det_moving(j, "car", 100 + j * 60 + (7 if i % 2 else 0), 600, motion=0.002)
+                for j in range(1, 5)]
+        step(eng, t, dets)
+    assert "JAM" in fired_types(eng), "jittering boxes were mistaken for a moving queue"
+    assert eng.zones[(0, 2)].median_speed == 0.0
+
+
+def test_real_motion_defeats_the_jitter_filter():
+    """Same jitter, but the pixels are changing: that really is movement."""
+    eng = make_engine(confirm_jam_s=0.0)
+    t = 0.0
+    for i in range(40):
+        t = i * 0.2
+        dets = [det_moving(j, "car", 100 + j * 60 + (7 if i % 2 else 0), 600, motion=0.20)
+                for j in range(1, 5)]
+        step(eng, t, dets)
+    assert "JAM" not in fired_types(eng)
+
+
+# --------------------------------------------------------------------------- #
+# the road mask: "on the road" has to mean the road
+# --------------------------------------------------------------------------- #
+def test_cars_off_the_road_do_not_count_towards_a_jam():
+    import numpy as np
+
+    eng = make_engine(confirm_jam_s=0.0)
+    mask = np.zeros((H, W), dtype=bool)
+    mask[600:700, :] = True  # only a strip at the bottom is road
+    eng.set_road_mask(mask)
+    t = 0.0
+    for i in range(40):
+        t = i * 0.2
+        step(eng, t, [det(j, "car", 100 + j * 60, 300) for j in range(1, 5)])  # y=300, off road
+    assert "JAM" not in fired_types(eng), "counted cars that are not on the road"
+    for i in range(40):
+        t = 10 + i * 0.2
+        step(eng, t, [det(j, "car", 100 + j * 60, 620) for j in range(1, 5)])  # y=620, on road
+    assert "JAM" in fired_types(eng)
+
+
+def test_no_road_mask_means_no_constraint():
+    eng = make_engine(confirm_jam_s=0.0)
+    t = 0.0
+    for i in range(40):
+        t = i * 0.2
+        step(eng, t, [det(j, "car", 100 + j * 60, 600) for j in range(1, 5)])
+    assert "JAM" in fired_types(eng)
+
+
+# --------------------------------------------------------------------------- #
+# scale-free jam thresholds
+# --------------------------------------------------------------------------- #
+def test_auto_threshold_follows_the_clip_speed():
+    """A 300 px/s road must not be judged by the same 18 px/s as a 60 px/s one."""
+    eng = make_engine(confirm_jam_s=0.0, jam_speed_mode="auto")
+    assert eng.jam_threshold_px_s() == eng.cfg.jam_speed_px_s  # floor before any evidence
+    t = 0.0
+    for i in range(40):  # fast flowing traffic
+        t = i * 0.2
+        step(eng, t, [det(j, "car", 100 * i + j * 60, 600) for j in range(1, 5)])
+    fast = eng.jam_threshold_px_s()
+    assert fast > eng.cfg.jam_speed_px_s, "threshold did not scale with the scene"
+    assert "JAM" not in fired_types(eng)
+
+
+def test_metric_threshold_uses_the_calibration():
+    eng = make_engine(jam_speed_mode="metric", px_per_meter=20.0, jam_speed_mps=2.0)
+    assert eng.jam_threshold_px_s() == pytest.approx(40.0)

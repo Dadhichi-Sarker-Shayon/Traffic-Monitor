@@ -64,17 +64,37 @@ python -m traffic_watch --source sample_media/clips/demo_traffic.mp4 \
 
 ## What it detects
 
-Every rule uses hysteresis (on/off thresholds) plus a persistence requirement,
-so nothing fires on a single noisy frame.
+Every rule uses hysteresis (on/off thresholds), a persistence requirement, and
+a **retrospective confirmation window**: a candidate is not reported the moment
+its score crosses the threshold, it has to still be there a moment later, and it
+is retracted silently if the evidence falls apart before then. That last part is
+what lets the system use *future* frames, which no amount of past-frame evidence
+can replace. Set `--confirm-jam 0 --confirm-accident 0` for the old
+fire-immediately behaviour.
 
-| event | rule |
-|---|---|
-| `JAM` | zone with ≥3 vehicles and median speed < 18 px/s, held ≥4s |
-| `JAM_ORIGIN` | jammed zone whose onset is clearly earliest → where the queue started |
-| `JAM_FRONT` | adjacent zone still flowing → the head of the queue |
-| `ACCIDENT` | two vehicles overlapping after fast motion, **held ≥0.6s**; or zone speed collapse (≥65%) with a stable vehicle count (queue growth excluded) |
-| `STOPPED` | vehicle stationary ≥8s in an *active* flow — suppressed inside jams and nose-to-tail queues |
-| `PED_CONFLICT` | person in a roadway zone with ≥2 vehicles, evidence accumulated ≥1s |
+| event | rule | confirmed after |
+|---|---|---|
+| `JAM` | zone with ≥3 vehicles on the road, median speed under threshold, held ≥4s | 1.0s |
+| `JAM_ORIGIN` | jammed zone whose onset is clearly earliest → where the queue started | 1.0s |
+| `JAM_FRONT` | adjacent zone still flowing → the head of the queue | 1.0s |
+| `ACCIDENT` | two vehicles overlapping after fast motion, held ≥0.6s; or zone speed collapse (≥65%) with a stable vehicle count (queue growth excluded) | 1.5s |
+| `STOPPED` | vehicle stationary ≥8s in an *active* flow — suppressed inside jams and nose-to-tail queues | — |
+| `PED_CONFLICT` | person in a roadway zone with ≥2 vehicles, evidence accumulated ≥1s | — |
+
+Three things make "cars standing still on the road" mean what it says:
+
+- **Motion, not displacement.** Speed is cleaned up with the mean pixel
+  difference inside the vehicle's own box (`traffic_watch/motion.py`), so a
+  parked car whose box jitters counts as standing still, and a car driving
+  *towards* the camera is not mistaken for a stopped one.
+- **On the road, actually.** When OpenPSG reports a road region, vehicles whose
+  boxes are not on it are not counted, so cars in a side street or on a pavement
+  no longer inflate congestion. Before the first scene-graph result arrives
+  there is no mask and no constraint.
+- **A scale-free threshold.** The default 18 px/s means different things at
+  720p and 4K, wide-angle and telephoto, 30 m and 80 m up.
+  `--jam-speed-mode auto` scales it to the traffic speed actually seen in the
+  clip, and `metric` takes it in m/s once `--px-per-meter` is given.
 
 Scene-graph relations from PSGTR (`driving on`, `parked on`, `crossing`, …) are
 logged next to the events as `kind:"psg"` rows, so the semantic layer is
@@ -132,6 +152,10 @@ re-running anything.
 | `--max-frames N` | – | stop after N frames |
 | `--num-rel` | 12 | relations kept per scene-graph frame |
 | `--grid-cols` / `--grid-rows` | 6 / 3 | congestion zone grid |
+| `--jam-speed-mode` | `abs` | `abs` fixed px/s · `auto` relative to this clip · `metric` m/s via `--px-per-meter` |
+| `--jam-speed-rel-frac` | 0.25 | `auto` mode: congested below this share of the scene speed |
+| `--confirm-jam` / `--confirm-accident` | 1.0 / 1.5 | seconds a candidate must survive before it is reported |
+| `--no-road-mask` | off | ignore the OpenPSG road region when counting vehicles |
 | `--px-per-meter` | – | calibration: report km/h instead of px/s |
 | `--show` | off | live preview window |
 
@@ -226,14 +250,21 @@ is knowing *why*, because it rules out the obvious fix:
   also counts parked cars, cars in a lot and cars on a pavement, and the fixed
   6×3 frame grid cuts across roads whatever direction they run.
 - The engine is strictly causal: it fires from past frames only and can never
-  use the next second to confirm or retract.
+  use the next second to confirm or retract. *(Fixed — see the retrospective
+  confirmation window above.)*
 
-Fine-tuning the detector fixes none of these. The planned order is therefore:
-measure first (this section), then fix `JAM` with true motion, the road mask and
-calibrated thresholds plus a retrospective confirmation window, and only then
-add a damage-verification stage — locally, since this project runs offline on a
-4 GB card. Fine-tuning a small damage classifier becomes justified only if
-local zero-shot verification measures out badly.
+Fine-tuning the detector fixes none of these. The order taken is therefore:
+measure first (the eval loop), then the `JAM` rework and the retrospective
+confirmation window (both done, both off-by-default where they change existing
+behaviour), and only then a damage-verification stage — locally, since this
+project runs offline on a 4 GB card. Fine-tuning a small damage classifier
+becomes justified only if local zero-shot verification measures out badly.
+
+Confirmation has a real cost: on the synthetic clip the crash is now reported at
+6.9s instead of 4.7s, because it waits for the overlap to persist 0.6s and then
+still be there 1.5s later. That is the intended trade — a decision that survives
+contact with the next two seconds — but it is a trade, and `--confirm-* 0` gets
+the old timing back.
 
 ## Known limitations
 

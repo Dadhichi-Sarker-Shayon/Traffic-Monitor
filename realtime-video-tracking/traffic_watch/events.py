@@ -27,6 +27,16 @@ import numpy as np
 VEHICLE_CLASSES = {"car", "bus", "truck", "motorcycle", "bicycle"}
 MOVING_CLASSES = VEHICLE_CLASSES
 
+# which EngineConfig field holds the retrospective confirmation time per event
+CONFIRM_ATTR = {
+    "JAM": "confirm_jam_s",
+    "JAM_ORIGIN": "confirm_jam_s",
+    "JAM_FRONT": "confirm_jam_s",
+    "ACCIDENT": "confirm_accident_s",
+    "STOPPED": "confirm_stopped_s",
+    "PED_CONFLICT": "confirm_ped_s",
+}
+
 
 # --------------------------------------------------------------------------- #
 # config
@@ -40,7 +50,19 @@ class EngineConfig:
 
     # speed (pixels / second, EMA smoothed)
     speed_ema: float = 0.3
-    jam_speed_px_s: float = 18.0        # below this a zone counts as congested
+    jam_speed_px_s: float = 18.0        # "abs" mode: below this a zone counts as congested
+    # "abs" keeps that fixed pixel threshold; "auto" scales it to the traffic
+    # speed actually seen in this clip, which is the only way a px/s threshold
+    # can mean the same thing at 720p and 4K, or at 30 m and 80 m up. With
+    # px_per_meter set, "metric" takes the threshold in m/s instead.
+    jam_speed_mode: str = "abs"        # abs | auto | metric
+    jam_speed_rel_frac: float = 0.25   # auto: congested below this share of the scene speed
+    jam_speed_mps: float = 1.5         # metric: ~5 km/h
+    px_per_meter: Optional[float] = None
+    # a car whose pixels are not changing is standing still, however much its
+    # box wanders between frames
+    motion_still_thresh: float = 0.012  # mean abs frame difference inside the box
+    jitter_speed_px_s: float = 40.0# ... below this, displacement is treated as noise
     jam_min_vehicles: int = 3           # vehicles inside the zone
     jam_min_density: float = 0.06       # vehicles / zone area (k px)
     jam_persist_s: float = 4.0          # zone must stay bad this long
@@ -67,6 +89,18 @@ class EngineConfig:
     event_on: float = 1.0               # score needed to fire
     event_off: float = 0.45             # score below which a fired event clears
     event_max: float = 3.0              # score cap
+
+    # Retrospective confirmation. The rules above are all "past frames only",
+    # which is half the problem: a pair of cars overlapping for one frame, or a
+    # queue that dissolves immediately, both look real until you see what
+    # happens next. A candidate is therefore not reported the moment its score
+    # crosses the threshold - it has to still be there this many seconds later,
+    # and it is retracted silently if the evidence falls apart before then.
+    # 0.0 restores the old fire-immediately behaviour.
+    confirm_jam_s: float = 1.0
+    confirm_accident_s: float = 1.5
+    confirm_stopped_s: float = 0.0
+    confirm_ped_s: float = 0.0
     history_s: float = 6.0              # per-track history window
     cool_down_s: float = 6.0            # min gap between repeats of same event
 
@@ -118,11 +152,22 @@ class Event:
     detail: str = ""
     score: float = 1.0
     bbox: Optional[Tuple[float, float, float, float]] = None
+    provisional: bool = False  # seen, but still waiting for future frames
+    held_s: float = 0.0        # how long the candidate held before it was reported
 
 
 # --------------------------------------------------------------------------- #
 # per-track state
 # --------------------------------------------------------------------------- #
+@dataclass
+class _Pending:
+    """A candidate event seen but not yet confirmed by future frames."""
+    key: str
+    first_seen: float
+    last_seen: float
+    event: Optional[Event]
+
+
 @dataclass
 class _Track:
     tid: int
@@ -133,11 +178,18 @@ class _Track:
     peak: float = 0.0             # decaying recent peak (evidence of motion)
     stopped_in_jam: bool = False  # stop happened inside a jam -> not an incident
     last_seen: float = -1e9
+    motion: Optional[float] = None  # mean abs frame difference inside the box
+    motion_ema: float = 0.0
     stopped_since: Optional[float] = None
 
-    def add(self, t: float, box: Tuple[float, float, float, float], cfg: EngineConfig) -> None:
+    def add(self, t: float, box: Tuple[float, float, float, float], cfg: EngineConfig,
+            motion: Optional[float] = None) -> None:
         cx = (box[0] + box[2]) / 2.0
         cy = (box[1] + box[3]) / 2.0
+        if motion is not None:
+            self.motion = motion
+            self.motion_ema = (0.6 * self.motion_ema + 0.4 * motion
+                               if self.motion_ema else motion)
         if self.hist:
             t0, x0, y0 = self.hist[-1]
             dt = t - t0
@@ -168,6 +220,20 @@ class _Track:
     @property
     def box(self) -> Tuple[float, float, float, float]:
         return self.boxes[-1][1]
+
+    def real_speed(self, cfg: EngineConfig) -> float:
+        """Displacement speed with detector box-jitter removed.
+
+        A parked car whose box wobbles a few pixels per frame reads as moving
+        under plain centroid displacement. When we have the pixel-motion signal
+        and the pixels inside the box are not changing, the displacement is
+        noise and the vehicle counts as standing still.
+        """
+        if self.motion is None:
+            return self.speed
+        if self.motion_ema < cfg.motion_still_thresh and self.speed < cfg.jitter_speed_px_s:
+            return 0.0
+        return self.speed
 
 
 # --------------------------------------------------------------------------- #
@@ -200,6 +266,13 @@ class EventEngine:
         # collision evidence (s): overlap alone is too noisy in dense traffic,
         # so it has to persist before we call it an accident
         self._collision_since: Optional[float] = None
+        # candidates seen but not yet confirmed, awaiting future frames
+        self._pending: Dict[str, "_Pending"] = {}
+        # road mask from OpenPSG; None means "no constraint available"
+        self.road_mask = None
+        self.road_mask_h = self.road_mask_w = 0
+        # slow-decaying reference to this clip's normal traffic speed (px/s)
+        self._scene_speed_ref = 0.0
         self.active: Dict[str, Event] = {}  # currently fired events (by key)
         self.history: List[Event] = []      # fired (and since-cleared) events
         self.jam_origin_key: Optional[Tuple[int, int]] = None
@@ -229,7 +302,46 @@ class EventEngine:
     def active_flow(self) -> bool:
         """Is the road generally flowing right now? (needed to judge 'stopped')"""
         speeds = [z.median_speed for z in self.zones.values() if z.vehicles >= 1]
-        return _median(speeds, 0.0) > self.cfg.jam_speed_px_s * 1.5
+        return _median(speeds, 0.0) > self.jam_threshold_px_s() * 1.5
+
+    # ------------------------------------------------------- calibration / road
+    def jam_threshold_px_s(self) -> float:
+        """The speed below which a zone counts as congested, in px/s.
+
+        "abs"    - the fixed historical threshold (default, unchanged behaviour)
+        "metric" - a real-world speed, converted with the px-per-metre calibration
+        "auto"   - a share of the traffic speed seen in this clip, floored at the
+                   absolute value so it can never become absurdly small
+        """
+        cfg = self.cfg
+        if cfg.jam_speed_mode == "metric" and cfg.px_per_meter:
+            return max(1.0, cfg.jam_speed_mps * cfg.px_per_meter)
+        if cfg.jam_speed_mode == "auto":
+            return max(cfg.jam_speed_px_s, cfg.jam_speed_rel_frac * self._scene_speed_ref)
+        return cfg.jam_speed_px_s
+
+    def set_road_mask(self, mask) -> None:
+        """Install a boolean road mask (OpenPSG stuff region), or None."""
+        if mask is None:
+            self.road_mask = None
+            return
+        self.road_mask = mask
+        self.road_mask_h, self.road_mask_w = mask.shape[:2]
+
+    def on_road(self, box: Tuple[float, float, float, float]) -> bool:
+        """Is this box mostly on the road? True when no mask is available."""
+        m = self.road_mask
+        if m is None:
+            return True
+        x1, y1, x2, y2 = box
+        h, w = m.shape[:2]
+        sx, sy = w / float(max(1, self.frame_w)), h / float(max(1, self.frame_h))
+        ix1, iy1 = int(max(0, x1 * sx)), int(max(0, y1 * sy))
+        ix2, iy2 = int(min(w, max(ix1 + 1, x2 * sx))), int(min(h, max(iy1 + 1, y2 * sy)))
+        sub = m[iy1:iy2, ix1:ix2]
+        if sub.size == 0:
+            return True
+        return float(sub.mean()) >= 0.5
 
     # ---------------------------------------------------------------- update
     def update(self, t: float, detections) -> List[Event]:
@@ -247,7 +359,7 @@ class EventEngine:
                 tr = _Track(tid=tid, cls=cls)
                 self.tracks[tid] = tr
             tr.cls = cls
-            tr.add(t, box, cfg)
+            tr.add(t, box, cfg, motion=d.get("motion"))
             seen_ids.add(tid)
         # prune stale tracks
         for tid in [k for k, v in self.tracks.items() if t - v.last_seen > cfg.history_s]:
@@ -258,6 +370,7 @@ class EventEngine:
             z.vehicles = 0
             z.pedestrians = 0
         zone_speeds: Dict[Tuple[int, int], List[float]] = defaultdict(list)
+        moving_speeds: List[float] = []
         for tr in self.tracks.values():
             if t - tr.last_seen > 0.5:
                 continue
@@ -266,10 +379,24 @@ class EventEngine:
             if key is None:
                 continue
             if tr.cls in VEHICLE_CLASSES:
+                # "standing on the road" has to mean the road: with a PSG road
+                # mask available, cars in a car park or on a pavement no longer
+                # count towards congestion.
+                if not self.on_road(tr.box):
+                    continue
+                spd = tr.real_speed(cfg)
                 self.zones[key].vehicles += 1
-                zone_speeds[key].append(tr.speed)
+                zone_speeds[key].append(spd)
+                if spd > 0:
+                    moving_speeds.append(spd)
             elif tr.cls == "person":
                 self.zones[key].pedestrians += 1
+
+        # what "normal traffic speed" looks like in this clip, so the jam
+        # threshold can be relative to it rather than an absolute px/s
+        if moving_speeds:
+            obs = _median(moving_speeds, 0.0)
+            self._scene_speed_ref = max(self._scene_speed_ref * 0.995, obs, 1.0)
         area_k = max(1e-6, self.zone_pixel_area() / 1000.0)
         for key, z in self.zones.items():
             z.median_speed = _median(zone_speeds.get(key, []), 0.0)
@@ -290,11 +417,12 @@ class EventEngine:
     def _check_jam(self, t: float, fired: List[Event]) -> None:
         cfg = self.cfg
         jammed_now = {}
+        thresh = self.jam_threshold_px_s()
         for key, z in self.zones.items():
             density = z.vehicles / area_k if (area_k := max(1e-6, self.zone_pixel_area() / 1000.0)) else 0.0
             bad = (
                 z.vehicles >= cfg.jam_min_vehicles
-                and (z.median_speed < cfg.jam_speed_px_s or density >= cfg.jam_min_density * 2)
+                and (z.median_speed < thresh or density >= cfg.jam_min_density * 2)
             )
             if bad:
                 if z.jam_onset_t is None:
@@ -553,26 +681,74 @@ class EventEngine:
         cool_down_override: Optional[float] = None,
     ) -> None:
         """Hysteresis: fire when score reaches on-threshold, clear when it
-        drops below off-threshold.  Cooldown suppresses rapid repeats."""
+        drops below off-threshold.  Cooldown suppresses rapid repeats.
+
+        A new candidate is not reported straight away: it waits `confirm_s` for
+        this key, and if the score falls apart before then it is dropped without
+        ever appearing in the log. That is the "look at the next frames" half of
+        the decision, which no amount of past-frame evidence can replace.
+        """
         cfg = self.cfg
         cur = self._scores.get(key, 0.0)
         cur = score if score > 0 else max(0.0, cur - 1.0)
         cur = min(cur, cfg.event_max)
         self._scores[key] = cur
 
+        need = getattr(cfg, CONFIRM_ATTR.get(key, ""), 0.0) or 0.0
         was = key in self.active
         if not was and cur >= cfg.event_on:
             cool = cool_down_override if cool_down_override is not None else cfg.cool_down_s
-            if t - self._last_fired[key] >= cool and event is not None:
-                self.active[key] = event
+            pend = self._pending.get(key)
+            if pend is None:
+                pend = _Pending(key=key, first_seen=t, last_seen=t, event=event)
+                self._pending[key] = pend
+            else:
+                pend.last_seen = t
+                if event is not None:
+                    pend.event = event  # keep the freshest bbox / detail
+            if (t - pend.first_seen >= need and t - self._last_fired[key] >= cool
+                    and pend.event is not None):
+                ev = pend.event
+                ev.provisional = False
+                ev.held_s = round(t - pend.first_seen, 3)
+                self.active[key] = ev
                 self._last_fired[key] = t
-                event.zone = event.zone if event.zone is not None else None
                 if extra_zones is not None:
-                    event.detail = event.detail + f" zones={sorted(extra_zones)}"
-                self.history.append(event)
-                fired.append(event)
-        elif was and cur < cfg.event_off:
-            del self.active[key]
+                    ev.detail = ev.detail + f" zones={sorted(extra_zones)}"
+                self.history.append(ev)
+                fired.append(ev)
+                del self._pending[key]
+        else:
+            if cur < cfg.event_off:
+                # retracted before it was ever confirmed -> never reported
+                self._pending.pop(key, None)
+            if was and cur < cfg.event_off:
+                del self.active[key]
+
+    # ------------------------------------------------------ confirmation api
+    def provisional_events(self) -> List[Event]:
+        """Candidates seen but not yet confirmed - draw them, but do not log."""
+        return [p.event for p in self._pending.values() if p.event is not None]
+
+    def finalize(self, t: float) -> List[Event]:
+        """Flush still-valid candidates at end of stream.
+
+        Without this, anything that happens in the last `confirm_s` seconds of a
+        clip would be silently dropped, because confirmation needs frames that
+        never arrive.
+        """
+        out: List[Event] = []
+        for key, pend in list(self._pending.items()):
+            if t - pend.last_seen > 1e-6 or pend.event is None:
+                continue
+            ev = pend.event
+            ev.provisional = False
+            ev.held_s = round(t - pend.first_seen, 3)
+            self.active[key] = ev
+            self.history.append(ev)
+            out.append(ev)
+            del self._pending[key]
+        return out
 
     # ----------------------------------------------------------------- api
     @property

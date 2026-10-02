@@ -88,6 +88,33 @@ class Relation:
     score: float
 
 
+def road_mask_of(res: "PSGResult", height: int, width: int) -> Optional[np.ndarray]:
+    """Boolean road mask for a scene-graph result, or None if it found no road.
+
+    The event engine uses this to mean "cars standing on the road" literally:
+    without it, cars parked in a side street or on a pavement inflate the
+    vehicle count that the jam rule depends on.
+
+    PSGTR reports the road as a panoptic *thing* as often as a stuff region, so
+    both have to be consulted - looking only at `stuff` finds nothing on most
+    real traffic footage.
+    """
+    roads = [m for label, m in res.stuff.items() if "road" in label.lower()]
+    roads += [i.mask for i in res.instances
+              if i.mask is not None and "road" in i.label.lower()]
+    if not roads:
+        return None
+    mask = np.zeros(roads[0].shape[:2], dtype=bool)
+    for m in roads:
+        mask |= m.astype(bool)
+    if height == mask.shape[0] and width == mask.shape[1]:
+        return mask
+    import cv2
+
+    return cv2.resize(mask.astype(np.uint8), (width, height),
+                      interpolation=cv2.INTER_NEAREST).astype(bool)
+
+
 @dataclass
 class PSGResult:
     t: float = 0.0
