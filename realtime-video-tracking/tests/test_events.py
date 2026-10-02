@@ -119,6 +119,23 @@ def test_collision_like_overlap_fires_accident():
     assert "ACCIDENT" in fired_types(eng)
 
 
+def test_transient_overlap_does_not_fire_accident():
+    """A single frame of box overlap (ID swap / occlusion in dense traffic)
+    must not raise an accident: the condition has to persist."""
+    eng = make_engine(collision_persist_s=0.6)
+    t = 0.0
+    for i in range(30):
+        t = i * 0.1
+        if i < 10:
+            dets = [det(1, "car", 100 + i * 90, 550), det(2, "car", 300 + i * 90, 555)]
+        elif i < 12:  # two frames of jitter-level overlap, then they separate
+            dets = [det(1, "car", 990, 550), det(2, "car", 1010, 552)]
+        else:
+            dets = [det(1, "car", 990 + i, 550), det(2, "car", 1200, 552)]
+        step(eng, t, dets)
+    assert "ACCIDENT" not in fired_types(eng)
+
+
 def test_hysteresis_clears_events():
     eng = make_engine(jam_persist_s=0.5)
     t = 0.0

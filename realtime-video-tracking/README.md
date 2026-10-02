@@ -87,10 +87,56 @@ Useful flags: `--psg-interval N` (0 = off), `--no-psg`, `--num-rel`,
 | `JAM` | zone with ≥3 vehicles and median speed < 18 px/s, held ≥4s |
 | `JAM_ORIGIN` | jammed zone whose onset is clearly earliest → the queue's start |
 | `JAM_FRONT` | adjacent zone still flowing → where the queue ends |
-| `ACCIDENT` | two vehicles overlapping while both just stopped after fast motion, **or** zone speed collapse (≥65%) with stable vehicle count (queue growth excluded) |
+| `ACCIDENT` | two vehicles overlapping while both just stopped after fast motion **and the overlap persists ≥0.6s**, **or** zone speed collapse (≥65%) with stable vehicle count (queue growth excluded) |
 | `STOPPED` | vehicle stationary ≥8s in an *active* flow — suppressed inside jams / nose-to-tail queues |
 | `PED_CONFLICT` | person in a roadway zone with ≥2 vehicles, evidence accumulated ≥1s |
 
 Scene-graph cues (e.g. PSG's `about to hit`, `crossing`) come from the OpenPSG
 layer and are logged alongside; the event log's `kind:"psg"` rows carry the
 relations for each analyzed frame.
+
+The persistence requirement on `ACCIDENT` is not cosmetic: in dense traffic
+shot from above, neighbouring cars overlap for a frame or two all the time
+(detector box jitter, tracker ID swaps). Firing on the first overlapping frame
+produced two phantom accidents on the aerial clip below; requiring the overlap
+to hold for `collision_persist_s` removed both.
+
+## Dense traffic / high-angle test
+
+`sample_media/clips/tiltshift_traffic.mp4` — 29.5s, 1280x720 @60fps, high-angle
+view of a busy multi-lane street, 7–12 vehicles per frame.
+
+```bash
+python -m traffic_watch --source sample_media/clips/tiltshift_traffic.mp4 \
+    --out outputs/tiltshift_traffic_full.mp4 --psg-interval 24 --device cuda:0
+```
+
+Result: 1770 frames in 662s (**2.7 fps** on a GTX 1650), 70 OpenPSG scene-graph
+frames, **0 events** — correct behaviour, the traffic keeps flowing so there is
+nothing to report. `outputs/tiltshift_traffic_full.mp4` +
+`.events.jsonl` are checked in (the video is re-encoded at crf 28, 72MB→7.8MB,
+overlays verified intact afterwards).
+
+Typical scene graph from this clip:
+
+```
+car   -[driving on]->  road      0.91      person -[walking on]->   road      0.89
+car   -[parked on]->  road      0.85      car     -[beside]->      car       0.84
+bus   -[driving on]->  road      0.90      person -[carrying]->    backpack  0.82
+```
+
+### Known limit: true top-down aerial footage
+
+The COCO-trained YOLOv8s detector cannot see cars in real top-down drone
+footage — a genuine aerial domain gap, not a tuning problem. Measured on
+`sample_media/clips/aerial_traffic.mp4` (1452 frames):
+
+| setting | result |
+|---|---|
+| conf 0.35, imgsz 640 | 0 vehicles, all 7 sampled frames |
+| conf 0.05, imgsz 1280 | only junk (`suitcase`, `cell phone`, `boat`, `airplane`) |
+
+`drone_traffic.mp4` is higher altitude still (only rooftops and snow visible).
+Supporting aerial weights (e.g. DOTA/VisDrone-trained) or tiling+rotation for
+tiny objects would be needed before high-altitude drone streams are usable;
+the clips are kept in the repo so the finding stays reproducible.

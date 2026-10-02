@@ -197,6 +197,9 @@ class EventEngine:
         self._scores: Dict[str, float] = defaultdict(float)
         self._last_fired: Dict[str, float] = defaultdict(lambda: -1e9)
         self._ped_acc: Dict[int, float] = {}  # pedestrian conflict evidence (s)
+        # collision evidence (s): overlap alone is too noisy in dense traffic,
+        # so it has to persist before we call it an accident
+        self._collision_since: Optional[float] = None
         self.active: Dict[str, Event] = {}  # currently fired events (by key)
         self.history: List[Event] = []      # fired (and since-cleared) events
         self.jam_origin_key: Optional[Tuple[int, int]] = None
@@ -426,12 +429,25 @@ class EventEngine:
                     )
                     break
 
+        # the overlap must persist; one frame of jitter is just occlusion
+        if collision is not None:
+            if self._collision_since is None:
+                self._collision_since = t
+            held = t - self._collision_since
+            collision.detail += f", held {held:.1f}s"
+            if held < cfg.collision_persist_s:
+                collision = None  # not yet convincing enough to fire
+            collision_score = 1.0 if collision is not None else 0.9 * held / max(1e-3, cfg.collision_persist_s)
+        else:
+            self._collision_since = None
+            collision_score = 0.0
+
         ev = collision or collapse
         self._emit(
             fired,
             key="ACCIDENT",
             t=t,
-            score=1.0 if ev else 0.0,
+            score=collision_score if collision_score > 0 else (1.0 if collapse else 0.0),
             event=ev or Event(type="ACCIDENT", t=t),
             cool_down_override=10.0,
         )

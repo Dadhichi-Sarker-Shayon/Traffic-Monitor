@@ -69,7 +69,7 @@ def draw_zones(img, engine: EventEngine, cfg: EngineConfig) -> None:
             lbl = f"{z.vehicles}v {z.median_speed:.0f}px/s"
             _put_label(img, lbl, (x1 + 4, y1 + 16), (255, 255, 255), scale=0.42, bg=(40, 40, 40))
     # alpha-blend the tinted copy back (only where it actually changed)
-    diff = np.abs(ov.astype(np.int16) - img.astype(np.int16)).sum(axis=2) > 0
+    diff = cv2.cvtColor(cv2.absdiff(ov, img), cv2.COLOR_BGR2GRAY) > 0
     blended = cv2.addWeighted(img, 0.55, ov, 0.45, 0)
     img[diff] = blended[diff]
 
@@ -83,14 +83,15 @@ def draw_psg(img, psg: PSGResult, *, show_masks=True, show_relations=True) -> No
             if tint is None:
                 continue
             mask = cv2.resize(m.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST).astype(bool)
-            img[mask] = (img[mask] * 0.75 + np.array(tint) * 0.25).astype(np.uint8)
+            tint_arr = np.array(tint, dtype=np.float32)
+            img[mask] = (img[mask].astype(np.float32) * 0.75 + tint_arr * 0.25).astype(np.uint8)
         # instance masks + labels
         for inst in psg.instances:
             if inst.area < 400:
                 continue
             mask = cv2.resize(inst.mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST).astype(bool)
             col = np.array(_instance_color(inst.idx), dtype=np.float32)
-            img[mask] = (img[mask] * 0.55 + col * 0.45).astype(np.uint8)
+            img[mask] = (img[mask].astype(np.float32) * 0.55 + col * 0.45).astype(np.uint8)
             x1, y1, x2, y2 = map(int, inst.bbox)
             cv2.rectangle(img, (x1, y1), (x2, y2), _instance_color(inst.idx), 1)
             _put_label(img, inst.label, (x1 + 2, y1 - 4 if y1 > 16 else y1 + 14),
