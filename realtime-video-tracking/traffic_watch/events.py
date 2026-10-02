@@ -518,11 +518,22 @@ class EventEngine:
                         if origin and origin.jam_onset_t is not None else "")
                 if origin
                 else "",
+                evidence=(
+                    {
+                        "onset_t": round(
+                            origin.jam_onset_t
+                            if origin.jam_onset_t is not None else t, 1),
+                        "median_speed_px_s": round(origin.median_speed, 1),
+                        "vehicles": origin.vehicles,
+                    }
+                    if origin else {}
+                ),
             ),
         )
 
         # ---- jam front: flowing zone adjacent to a jammed zone ------------
         front = None
+        front_zone = None
         if jammed_now:
             for key, z in jammed_now.items():
                 c, r = key
@@ -532,6 +543,7 @@ class EventEngine:
                         continue
                     if nb.vehicles >= 1 and nb.median_speed >= cfg.jam_front_speed_px_s:
                         front = (nc, nr)
+                        front_zone = nb
                         break
                 if front:
                     break
@@ -540,7 +552,17 @@ class EventEngine:
             key="JAM_FRONT",
             t=t,
             score=1.0 if front else 0.0,
-            event=Event(type="JAM_FRONT", t=t, zone=front, detail="queue head / flow resumes"),
+            event=Event(
+                type="JAM_FRONT",
+                t=t,
+                zone=front,
+                detail="queue head / flow resumes",
+                evidence=(
+                    {"front_speed_px_s": round(front_zone.median_speed, 1),
+                     "vehicles": front_zone.vehicles}
+                    if front_zone else {}
+                ),
+            ),
         )
 
     # ------------------------------------------------------------- accidents
@@ -716,6 +738,8 @@ class EventEngine:
                     track_ids=(tr.tid,),
                     detail=f"person#{tr.tid} in roadway with {z.vehicles} vehicles",
                     bbox=tr.box,
+                    evidence={"vehicles": z.vehicles,
+                              "ped_speed_px_s": round(tr.speed, 1)},
                 ),
                 cool_down_override=8.0,
             )
