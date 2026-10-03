@@ -30,9 +30,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--log", default=None, help="JSONL event log path (default: alongside --out)")
     p.add_argument("--show", action="store_true", help="live preview window")
     p.add_argument("--device", default="cuda:0", help="inference device (cuda:0 / cpu)")
+    p.add_argument("--psg-device", default=None, help="override device for OpenPSG (e.g. cpu to save VRAM)")
     p.add_argument("--weights", default="yolov8s.pt", help="YOLO weights")
-    p.add_argument("--conf", type=float, default=0.4, help="YOLO confidence")
+    p.add_argument("--conf", type=float, default=0.55, help="YOLO confidence")
     p.add_argument("--iou", type=float, default=0.6, help="YOLO NMS IoU")
+    p.add_argument("--imgsz", type=int, default=640, help="YOLO inference size (increase for aerial, costs VRAM)")
     p.add_argument("--detections", default=None,
                    help="ground-truth detections JSONL (bypasses YOLO, deterministic demo)")
     p.add_argument("--max-frames", type=int, default=None, help="stop after N frames")
@@ -50,22 +52,33 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--roi-top", type=float, default=0.45, help="ROI top edge as fraction of frame height")
     p.add_argument("--psg-masks", action="store_true", default=True, help="draw PSG masks")
     p.add_argument("--no-psg-masks", dest="psg_masks", action="store_false")
-    p.add_argument("--jam-speed-mode", choices=["abs", "auto", "metric"], default="abs",
-                   help="abs = fixed px/s (default); auto = relative to this clip's "
-                        "traffic speed; metric = m/s via --px-per-meter")
+    p.add_argument("--jam-speed-mode", choices=["abs", "auto", "metric"], default="auto",
+                   help="abs = fixed px/s; auto = relative to this clip's "
+                        "traffic speed (default); metric = m/s via --px-per-meter")
     p.add_argument("--jam-speed-rel-frac", type=float, default=0.25,
                    help="auto mode: congested below this share of the scene speed")
     p.add_argument("--confirm-jam", type=float, default=1.0,
                    help="seconds a jam candidate must survive before it is reported")
-    p.add_argument("--confirm-accident", type=float, default=1.5,
+    p.add_argument("--confirm-accident", type=float, default=0.3,
                    help="seconds an accident candidate must survive before it is reported")
     p.add_argument("--collision-dv", type=float, default=None,
                    help="px/s speed drop that must accompany a collision overlap")
     p.add_argument("--vlm", action="store_true",
                    help="adjudicate fired events with a vision-language model "
                         "(second opinion; can veto, never invents)")
-    p.add_argument("--vlm-model", default="Qwen/Qwen2.5-VL-7B-Instruct",
-                   help="model id for --vlm (any image-to-text VLM)")
+    p.add_argument("--vlm-model", default="Qwen/Qwen2-VL-2B-Instruct",
+                   help="model id for --vlm (Qwen2-VL family, 4-bit; other ids use "
+                        "the transformers image-to-text pipeline)")
+    p.add_argument("--vlm-python", default=None,
+                   help="python.exe of an environment that has transformers; the VLM "
+                        "then runs as a worker process (needed next to OpenPSG's torch 1.13)")
+    p.add_argument("--vlm-adapter", default=None,
+                   help="folder of a LoRA adapter trained with notebooks/02_vlm_crash_qlora.ipynb")
+    p.add_argument("--vlm-scout", action="store_true",
+                   help="also let the VLM propose jams/crashes from sampled whole frames "
+                        "(implies --vlm)")
+    p.add_argument("--vlm-scout-interval", type=float, default=4.0,
+                   help="seconds of video between scout frames")
     p.add_argument("--no-road-mask", dest="road_mask", action="store_false",
                    help="ignore the OpenPSG road mask when counting vehicles in zones")
     return p
@@ -88,7 +101,7 @@ def main(argv=None) -> int:
         det = None
     else:
         det = Detector(weights=args.weights, device=args.device,
-                       conf=args.conf, iou=args.iou)
+                       conf=args.conf, iou=args.iou, imgsz=args.imgsz)
     engine_kw = {}
     if args.collision_dv is not None:
         engine_kw["collision_dv_px_s"] = args.collision_dv
@@ -102,10 +115,15 @@ def main(argv=None) -> int:
     engine = EventEngine(cfg, frame_shape=(src.height, src.width))
 
     adjudicator = None
-    if args.vlm:
-        from .adjudicator import VLMAdjudicator
-        adjudicator = VLMAdjudicator(model_id=args.vlm_model, device=args.device)
+    scout = None
+    if args.vlm or args.vlm_scout:
+        from .adjudicator import VLMAdjudicator, VLMScout
+        adjudicator = VLMAdjudicator(model_id=args.vlm_model, device=args.device,
+                                     python_exe=args.vlm_python, adapter=args.vlm_adapter)
         print(f"[vlm] adjudicating events with {args.vlm_model}")
+        if args.vlm_scout:
+            scout = VLMScout(adjudicator, interval_s=args.vlm_scout_interval)
+            print(f"[vlm] scout on: whole-frame check every {args.vlm_scout_interval:g}s")
     meter = MotionMeter()
 
     psg_classes = None
@@ -114,7 +132,7 @@ def main(argv=None) -> int:
         psg_classes = set(CLASSES) if not args.psg_classes \
             else set(args.psg_classes.split(","))
     psg = PSGRunner(
-        device=args.device,
+        device=args.psg_device or args.device,
         interval=0 if args.no_psg else args.psg_interval,
         num_rel=args.num_rel,
         enabled=not args.no_psg,
@@ -140,9 +158,9 @@ def main(argv=None) -> int:
         if log_f:
             log_f.write(json.dumps(obj, ensure_ascii=False) + "\n")
 
-    def report(ev, t, frame_idx, image, note=None):
+    def report(ev, t, frame_idx, image, note=None, adjudicate=True):
         """Adjudicate (when --vlm), log and print one fired event."""
-        if adjudicator is not None and image is not None:
+        if adjudicator is not None and image is not None and adjudicate:
             verdict = adjudicator.verify(image, ev)
             if not verdict.agrees:
                 engine.retract(ev.key)
@@ -179,6 +197,8 @@ def main(argv=None) -> int:
                 dets = [d.__dict__ for d in det.track(frame.image)]
                 meter.attach(frame.image, dets)
             fired = engine.update(frame.t, dets)
+            # the VLM must see the road, not our overlays
+            clean = frame.image.copy() if adjudicator is not None else None
 
             if psg.should_submit(frame.index):
                 psg.submit(frame.index, frame.t, frame.image)
@@ -195,7 +215,7 @@ def main(argv=None) -> int:
                         engine.set_road_mask(road)
                         last_road_mask_frame = res.frame_index
             draw_zones(img, engine, cfg)
-            draw_tracks(img, engine, px_per_meter=args.px_per_meter)
+            draw_tracks(img, engine, frame.t, px_per_meter=args.px_per_meter)
             draw_events(img, engine, frame.index)
 
             # HUD
@@ -214,7 +234,12 @@ def main(argv=None) -> int:
             _put_label(img, hud, (8, img.shape[0] - 10), (255, 255, 255), scale=0.5, bg=(25, 25, 25))
 
             for ev in fired:
-                report(ev, frame.t, frame.index, img)
+                report(ev, frame.t, frame.index, clean if clean is not None else img)
+            if scout is not None:
+                active = {e.type for e in engine.active.values()}
+                for ev in scout.scan(clean, frame.t, skip=active):
+                    engine.history.append(ev)
+                    report(ev, frame.t, frame.index, clean, adjudicate=False)
             if res is not None and res.frame_index >= 0 and res.frame_index != last_psg_logged:
                 last_psg_logged = res.frame_index
                 log({"kind": "psg", "t": round(res.t, 3), "frame": res.frame_index,
@@ -242,16 +267,18 @@ def main(argv=None) -> int:
         src.close()
         if writer is not None:
             writer.release()
-        if log_f:
-            log_f.close()
         if show:
             cv2.destroyAllWindows()
 
     dur = time.perf_counter() - t_start
     # candidates still alive at end of stream: confirm them, or the last
-    # `confirm_*` seconds of every clip would silently vanish
+    # `confirm_*` seconds of every clip would silently vanish. This has to
+    # run (and log) before log_f is closed below.
     for ev in engine.finalize(last_frame_t):
-        report(ev, ev.t, n, img if n else None, note="confirmed at end of stream")
+        report(ev, ev.t, n, (clean if adjudicator is not None else img) if n else None,
+               note="confirmed at end of stream")
+    if log_f:
+        log_f.close()
     print(f"[done] {n} frames in {dur:.1f}s ({n / max(dur, 1e-6):.1f} fps)")
     if out_path:
         print(f"[done] annotated video: {out_path}")
@@ -259,6 +286,7 @@ def main(argv=None) -> int:
     if psg.last_error:
         print(f"[psg] last error: {psg.last_error}")
     if adjudicator is not None:
+        adjudicator.close()
         print(f"[vlm] {adjudicator.calls} checked, {adjudicator.agreements} confirmed, "
               f"{adjudicator.vetoes} vetoed, {adjudicator.passthroughs} passthrough")
         if adjudicator.last_error:

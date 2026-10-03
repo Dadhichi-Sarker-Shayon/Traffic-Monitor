@@ -105,15 +105,15 @@ def test_pedestrian_conflict_in_roadway():
 
 
 def test_collision_like_overlap_fires_accident():
-    # the crash is now confirmed against future frames (confirm_accident_s=1.5
-    # on top of collision_persist_s=0.6), so the wreck has to be held for ~2.1s
+    # the crash is confirmed against future frames (confirm_accident_s on top of
+    # collision_persist_s) and needs vehicles that were established before contact
     eng = make_engine()
     t = 0.0
-    for i in range(45):
+    for i in range(60):
         t = i * 0.1
-        if i < 10:
-            # two cars approaching fast (moving 90px / 0.1s = 900 px/s)
-            dets = [det(1, "car", 100 + i * 90, 550), det(2, "car", 300 + i * 90, 555)]
+        if i < 20:
+            # two cars approaching fast (45px / 0.1s = 450 px/s)
+            dets = [det(1, "car", 100 + i * 45, 550), det(2, "car", 150 + i * 45, 555)]
         else:
             # they crashed: overlapping and both stopped
             dets = [det(1, "car", 990, 550), det(2, "car", 1010, 552)]
@@ -360,3 +360,159 @@ def test_abrupt_stop_with_overlap_fires_accident():
     assert fired, "expected ACCIDENT for an abrupt stop with overlap"
     assert fired[0].evidence.get("dv_px_s", 0) >= 25
     assert 1 in fired[0].track_ids and 2 in fired[0].track_ids
+
+
+# --------------------------------------------------------------------------- #
+# scene-level jam (net displacement in body-widths/s)
+# --------------------------------------------------------------------------- #
+def _queue(speed_px_s, n=10, secs=7.0, fps=25):
+    """n cars in two rows drifting at speed_px_s; returns the engine."""
+    eng = make_engine()
+    for f in range(int(secs * fps)):
+        t = f / fps
+        dets = [det(i + 1, "car", 100 + 110 * (i % 5) + speed_px_s * t, 480 + 80 * (i // 5))
+                for i in range(n)]
+        step(eng, t, dets)
+    return eng
+
+
+def test_net_speed_ignores_box_jitter():
+    eng = make_engine()
+    for f in range(60):
+        t = f / 30
+        jitter = 6 if f % 2 else -6          # +-6px every frame = 360 px/s "speed"
+        step(eng, t, [det(1, "car", 300 + jitter, 500)])
+    tr = eng.tracks[1]
+    assert tr.speed > 100                     # the per-frame estimate is fooled
+    assert tr.net_speed() < 15                # displacement over 1s is not
+
+
+def test_crawling_scene_is_a_jam():
+    eng = _queue(speed_px_s=8)                # ~0.13 widths/s
+    assert eng._scene_crawling
+    assert "JAM" in {e.type for e in eng.history}
+
+
+def test_flowing_scene_is_not_a_jam():
+    eng = _queue(speed_px_s=120)              # ~2 widths/s
+    assert not eng._scene_crawling
+    assert "JAM" not in {e.type for e in eng.history}
+
+
+def test_too_few_vehicles_is_not_a_scene_jam():
+    eng = _queue(speed_px_s=8, n=4)
+    assert not eng._scene_crawling
+
+
+def test_no_overlap_accident_inside_a_crawling_queue():
+    """Bumper-to-bumper contact is normal while the whole road crawls."""
+    eng = make_engine()
+    for f in range(200):
+        t = f / 25
+        dets = [det(i + 1, "car", 100 + 110 * (i % 5) + 8 * t, 480 + 80 * (i // 5)) for i in range(10)]
+        dets.append(det(50, "car", 150 + 8 * t, 482))   # overlaps car 1
+        step(eng, t, dets)
+    assert "ACCIDENT" not in {e.type for e in eng.history}
+
+
+# --------------------------------------------------------------------------- #
+# pedestrian conflict
+# --------------------------------------------------------------------------- #
+def _ped_scene(ped_kw=None, car_speed=150, car_x0=0, car_cls="car", secs=6.0, fps=25):
+    """A person stands on the road; a car 90px wide passes (or sits beside) them."""
+    eng = make_engine()
+    ped_kw = ped_kw or {}
+    for f in range(int(secs * fps)):
+        t = f / fps
+        dets = [
+            det(1, "person", ped_kw.get("x", 600), ped_kw.get("y", 540),
+                w=ped_kw.get("w", 30), h=ped_kw.get("h", 70)),
+            det(2, car_cls, car_x0 + car_speed * t, 560, w=90, h=50),
+        ]
+        step(eng, t, dets)
+    eng.finalize(secs)
+    return eng
+
+
+def _ped_events(eng):
+    return [e for e in eng.history if e.type == "PED_CONFLICT"]
+
+
+def test_pedestrian_next_to_a_moving_car_is_a_conflict():
+    eng = _ped_scene()
+    ev = _ped_events(eng)
+    assert ev and ev[0].track_ids == (1, 2)
+    assert ev[0].evidence["vehicle_id"] == 2
+
+
+def test_pedestrian_next_to_a_stationary_car_is_not():
+    assert not _ped_events(_ped_scene(car_speed=0, car_x0=520))
+
+
+def test_rider_on_a_motorcycle_is_not_a_pedestrian():
+    # person box sits on the motorbike box and moves with it
+    eng = make_engine()
+    for f in range(75):
+        t = f / 25
+        x = 380 + 300 * t
+        step(eng, t, [det(1, "person", x + 30, 520, w=30, h=70),
+                      det(2, "motorcycle", x, 560, w=90, h=50)])
+    assert not _ped_events(eng)
+
+
+def test_squarish_person_box_is_not_a_pedestrian():
+    # a seated torso (aspect < 1.6) is a rider whose bike was not detected
+    assert not _ped_events(_ped_scene(ped_kw={"w": 60, "h": 70}))
+
+
+def test_a_pedestrian_cluster_raises_one_alert():
+    eng = make_engine()
+    for f in range(150):
+        t = f / 25
+        dets = [det(2, "car", 150 * t, 560, w=90, h=50)]
+        dets += [det(10 + k, "person", 560 + 25 * k, 540, w=25, h=65) for k in range(4)]
+        step(eng, t, dets)
+    eng.finalize(6.0)
+    assert len(_ped_events(eng)) == 1
+
+
+def test_young_person_track_is_ignored():
+    eng = make_engine()
+    for f in range(8):                         # < ped_min_track_s
+        t = f / 25
+        step(eng, t, [det(1, "person", 600, 540, w=30, h=70),
+                      det(2, "car", 380 + 300 * t, 560, w=90, h=50)])
+    assert not _ped_events(eng)
+
+
+# --------------------------------------------------------------------------- #
+# pile-up sanity gates
+# --------------------------------------------------------------------------- #
+def _pileup(age_before_s, peak_px_s):
+    eng = make_engine()
+    fps, t = 25, 0.0
+    n_before = int(age_before_s * fps)
+    for f in range(n_before + 150):
+        t = f / fps
+        if f < n_before:
+            x = 100 + peak_px_s * t
+            dets = [det(1, "car", x, 540, w=80, h=50), det(2, "car", x + 100, 545, w=80, h=50)]
+        else:
+            x = 100 + peak_px_s * (n_before / fps)
+            dets = [det(1, "car", x, 540, w=80, h=50), det(2, "car", x + 70, 545, w=80, h=50)]
+        step(eng, t, dets)
+    eng.finalize(t)
+    return [e for e in eng.history if e.type == "ACCIDENT"]
+
+
+def test_established_vehicles_stopping_together_is_reported():
+    assert _pileup(age_before_s=4.0, peak_px_s=200)
+
+
+def test_young_tracks_cannot_raise_a_pileup():
+    assert not _pileup(age_before_s=1.0, peak_px_s=200)
+
+
+def test_impossible_speeds_cannot_raise_a_pileup():
+    # 80px cars at 4000 px/s = 50 widths/s: an id jump, not a vehicle
+    assert not _pileup(age_before_s=4.0, peak_px_s=4000)

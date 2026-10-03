@@ -35,6 +35,8 @@ class Detector:
         device: Optional[str] = None,
         conf: float = 0.4,
         iou: float = 0.6,
+        imgsz: int = 640,
+        tracker: Optional[str] = None,
         max_det: int = 100,
         half: bool = True,
     ):
@@ -45,17 +47,22 @@ class Detector:
             self.model.to(device)
         self.conf = conf
         self.iou = iou
+        self.imgsz = imgsz
+        self.tracker = tracker
         self.max_det = max_det
         self.half = half
         self._classes = sorted(COCO_KEEP)
 
     def track(self, frame: np.ndarray) -> List[Detection]:
+        import os
+        tracker_path = self.tracker or os.path.join(os.path.dirname(__file__), "tracker.yaml")
         res = self.model.track(
             frame,
             persist=True,
-            tracker="bytetrack.yaml",
+            tracker=tracker_path,
             conf=self.conf,
             iou=self.iou,
+            imgsz=self.imgsz,
             max_det=self.max_det,
             classes=self._classes,
             verbose=False,

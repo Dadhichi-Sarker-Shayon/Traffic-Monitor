@@ -11,8 +11,14 @@ A vetoed event is withdrawn, and the engine may fire it again after
 its normal cooldown - so the model gets a second chance on the next
 frames rather than suppressing an incident for the whole clip.
 
-Run with --vlm. Any instruction-tuned VLM that works with the
-transformers image-to-text pipeline can be used (--vlm-model).
+Run with --vlm. The default model is Qwen2-VL-2B (4-bit, ~1.5 GB of VRAM),
+run in-process when `transformers` is importable or in a separate interpreter
+with --vlm-python (needed next to OpenPSG's torch 1.13 stack). Any other model
+id falls back to the transformers image-to-text pipeline.
+
+With --vlm-scout the model also looks at a whole frame every few seconds and
+may *propose* a jam or a crash on its own. That is the one place it can create
+an event, so it needs two consecutive yes answers.
 """
 
 from __future__ import annotations
@@ -38,6 +44,18 @@ QUESTIONS = {
                     "through it? Answer yes or no.",
 }
 
+# scene-level questions for the scout (whole frame, no event needed)
+SCENE_QUESTIONS = {
+    "ACCIDENT": "Is a vehicle crash or collision happening or has one just "
+                "happened in this image? Answer yes or no.",
+    "JAM": "Is this road heavily congested, with many vehicles queued closely "
+           "and barely moving? Answer yes or no.",
+}
+
+# events judged on the whole frame: a tight crop of two distant cars hides the
+# context (road, queue, wreckage) the model needs
+FULL_FRAME_TYPES = frozenset({"ACCIDENT", "JAM", "JAM_ORIGIN", "JAM_FRONT"})
+
 YES_WORDS = ("yes", "yeah", "yep", "y")
 NO_WORDS = ("no", "nope", "nah", "n", "none", "nothing")
 
@@ -52,11 +70,17 @@ class Verdict:
 class VLMAdjudicator:
     """Second opinion for fired events. Never raises, never invents."""
 
-    def __init__(self, model_id: str = "Qwen/Qwen2.5-VL-7B-Instruct",
+    def __init__(self, model_id: str = "Qwen/Qwen2-VL-2B-Instruct",
                  device: Optional[str] = None,
-                 questions: Optional[dict] = None):
+                 questions: Optional[dict] = None,
+                 python_exe: Optional[str] = None,
+                 adapter: Optional[str] = None,
+                 full_frame_types=FULL_FRAME_TYPES):
         self.model_id = model_id
         self.device = device
+        self.python_exe = python_exe
+        self.adapter = adapter
+        self.full_frame_types = frozenset(full_frame_types)
         self.questions = questions or QUESTIONS
         self._pipe = None
         self.last_error: Optional[str] = None
@@ -70,15 +94,31 @@ class VLMAdjudicator:
         if self._pipe is not None:
             return True
         try:
-            from transformers import pipeline
-            kw = {"model": self.model_id}
-            if self.device is not None:
-                kw["device"] = self.device
-            self._pipe = pipeline("image-to-text", **kw)
+            dev = self.device or "cuda"
+            if self.python_exe:
+                from .vlm_backend import WorkerPipe
+                try:
+                    self._pipe = WorkerPipe(self.python_exe, self.model_id, dev, adapter=self.adapter)
+                except Exception:  # one retry: a cold start can lose a race for RAM/VRAM
+                    self._pipe = WorkerPipe(self.python_exe, self.model_id, dev, adapter=self.adapter)
+            elif "qwen2" in self.model_id.lower() and "vl" in self.model_id.lower():
+                from .vlm_backend import QwenVL
+                self._pipe = QwenVL(self.model_id, dev, adapter=self.adapter)
+            else:
+                from transformers import pipeline
+                kw = {"model": self.model_id}
+                if self.device is not None:
+                    kw["device"] = self.device
+                self._pipe = pipeline("image-to-text", **kw)
             return True
         except Exception as e:  # no torch / model / network: passthrough
             self.last_error = f"{type(e).__name__}: {e}"
             return False
+
+    def close(self) -> None:
+        closer = getattr(self._pipe, "close", None)
+        if closer:
+            closer()
 
     # ------------------------------------------------------------ inference
     def _ask(self, image_rgb, question: str) -> str:
@@ -100,7 +140,10 @@ class VLMAdjudicator:
             self.passthroughs += 1
             return Verdict(True, f"vlm unavailable ({self.last_error})",
                            passthrough=True)
-        crop = crop_event(image_bgr, event)
+        if event.type in self.full_frame_types:
+            crop = np.ascontiguousarray(image_bgr[:, :, ::-1])
+        else:
+            crop = crop_event(image_bgr, event)
         self.calls += 1
         try:
             answer = self._ask(crop, question)
@@ -121,6 +164,66 @@ class VLMAdjudicator:
             return Verdict(True, answer.strip())
         self.vetoes += 1
         return Verdict(False, answer.strip())
+
+
+    def ask_scene(self, image_bgr, kind: str) -> Optional[bool]:
+        """Whole-frame yes/no for the scout; None when no answer was obtained."""
+        q = SCENE_QUESTIONS.get(kind)
+        if q is None or not self._ensure_pipe():
+            return None
+        self.calls += 1
+        try:
+            answer = self._ask(np.ascontiguousarray(image_bgr[:, :, ::-1]), q)
+        except Exception as e:
+            self.last_error = f"{type(e).__name__}: {e}"
+            return None
+        return _parse_answer(answer)
+
+
+class VLMScout:
+    """Lets the VLM propose jams and crashes by looking at sampled frames.
+
+    Samples one frame every `interval_s` of video, asks the scene questions,
+    and reports a kind only after `need` consecutive yes answers, then stays
+    quiet for `cooldown_s`. The engine's own events are never duplicated:
+    `skip` is checked first (e.g. an already-active JAM).
+    """
+
+    def __init__(self, adjudicator: "VLMAdjudicator", interval_s: float = 4.0,
+                 need: int = 2, cooldown_s: float = 20.0,
+                 kinds=("ACCIDENT", "JAM")):
+        self.adj = adjudicator
+        self.interval_s = interval_s
+        self.need = need
+        self.cooldown_s = cooldown_s
+        self.kinds = tuple(kinds)
+        self._last_t = -1e9
+        self._streak = {k: 0 for k in self.kinds}
+        self._last_fired = {k: -1e9 for k in self.kinds}
+
+    def scan(self, image_bgr, t: float, skip=()) -> list:
+        from .events import Event
+
+        if t - self._last_t < self.interval_s:
+            return []
+        self._last_t = t
+        out = []
+        for kind in self.kinds:
+            if kind in skip:
+                self._streak[kind] = 0
+                continue
+            ans = self.adj.ask_scene(image_bgr, kind)
+            if ans is None:
+                continue
+            self._streak[kind] = self._streak[kind] + 1 if ans else 0
+            if (self._streak[kind] >= self.need
+                    and t - self._last_fired[kind] >= self.cooldown_s):
+                self._last_fired[kind] = t
+                out.append(Event(
+                    type=kind, t=t, key=f"VLM_{kind}",
+                    detail=f"vlm scene check: {self._streak[kind]} consecutive yes",
+                    evidence={"source": "vlm", "consecutive_yes": self._streak[kind]}))
+        return out
 
 
 def crop_event(image_bgr, event, pad_frac: float = 0.15):

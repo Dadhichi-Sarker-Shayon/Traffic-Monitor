@@ -46,12 +46,26 @@ class VideoSource:
         self._wall0 = time.monotonic()
 
     def frames(self) -> Iterator[Frame]:
+        retries = 0
         while True:
             if self.max_frames is not None and self._index >= self.max_frames:
                 return
             ok, image = self._cap.read()
             if not ok:
-                return
+                if self.live:
+                    if retries < 30:
+                        print(f"[warn] stream dropped, reconnecting... (attempt {retries+1})")
+                        time.sleep(1.0)
+                        self._cap.release()
+                        self._cap = cv2.VideoCapture(self.spec)
+                        retries += 1
+                        continue
+                    else:
+                        print("[error] stream lost permanently.")
+                        return
+                else:
+                    return
+            retries = 0
             if self.live:
                 t = time.monotonic() - self._wall0
             else:

@@ -26,6 +26,7 @@ import numpy as np
 
 VEHICLE_CLASSES = {"car", "bus", "truck", "motorcycle", "bicycle"}
 MOVING_CLASSES = VEHICLE_CLASSES
+RIDEABLE = {"motorcycle", "bicycle"}
 
 # which EngineConfig field holds the retrospective confirmation time per event
 CONFIRM_ATTR = {
@@ -55,7 +56,7 @@ class EngineConfig:
     # speed actually seen in this clip, which is the only way a px/s threshold
     # can mean the same thing at 720p and 4K, or at 30 m and 80 m up. With
     # px_per_meter set, "metric" takes the threshold in m/s instead.
-    jam_speed_mode: str = "abs"        # abs | auto | metric
+    jam_speed_mode: str = "auto"       # abs | auto | metric
     jam_speed_rel_frac: float = 0.25   # auto: congested below this share of the scene speed
     jam_speed_mps: float = 1.5         # metric: ~5 km/h
     px_per_meter: Optional[float] = None
@@ -68,10 +69,24 @@ class EngineConfig:
     jam_persist_s: float = 4.0          # zone must stay bad this long
     jam_origin_margin_s: float = 2.0    # how much earlier origin must onset
     jam_front_speed_px_s: float = 45.0  # speed of a "flowing" zone near the jam
+    # Scene-level jam test. Per-zone counts fail on dense footage (a 6x3 grid
+    # spreads 30 vehicles over 18 zones) and px/s fails across resolutions and
+    # frame rates (box jitter alone reads as 50 px/s at 50fps). So each vehicle
+    # is judged on its *net* displacement over ~1s, in body-widths per second.
+    # Measured: jams crawl at ~0.2 widths/s, free-flowing traffic at 0.7-1.0.
+    jam_norm_speed: float = 0.4         # a vehicle slower than this is crawling
+    jam_min_total: int = 8              # vehicles needed before it can be a jam
+    jam_slow_frac: float = 0.65         # share of them that must be crawling
 
     # accident
     collision_iou: float = 0.25
     collision_min_speed: float = 60.0   # px/s before impact
+    # "stopped now" for a crash is not the same bar as jam_speed_px_s: real
+    # wreckage often keeps sliding/spinning (20-40 px/s) long after impact,
+    # while jam_speed_px_s (~18) is tuned for queued traffic. A dedicated,
+    # looser cap here still excludes genuinely-still-cruising vehicles, and
+    # the dv_px_s / peak checks below are what actually rule out non-impacts.
+    collision_stopped_speed_px_s: float = 45.0
     collision_persist_s: float = 0.6
     # An impact is a discontinuity: speed collapses within a few
     # frames. Overlap without such a jump is a merge or a queue
@@ -81,6 +96,13 @@ class EngineConfig:
     collapse_drop_frac: float = 0.65    # median speed drops by 65%+
     collapse_min_before: float = 55.0   # ... from at least this speed
     collapse_persist_s: float = 1.5
+    # Pile-up / overlap sanity. A vehicle cannot cross the picture at 20+
+    # body-widths per second: such "speeds" are a track id jumping between
+    # cars, and a track younger than a few seconds has no trustworthy history.
+    pileup_min_age_s: float = 3.0
+    pileup_min_peak_widths_s: float = 0.8   # "was moving" must beat box jitter
+    collision_min_age_s: float = 1.5
+    max_plausible_widths_s: float = 25.0
 
     # stopped vehicle
     stopped_min_s: float = 8.0
@@ -88,7 +110,23 @@ class EngineConfig:
 
     # pedestrian conflict
     ped_conflict_min_vehicles: int = 2
-    ped_conflict_persist_s: float = 1.0
+    # Real seconds of continuous presence in a qualifying zone. Was 1.0, but
+    # the accumulator used to add a flat +0.1 per update() call regardless of
+    # the clip's actual frame rate - on 30fps footage that reached "1.0s" in
+    # 0.33 real seconds, 3x too fast, which is what was actually validated as
+    # the right sensitivity. Now that the accumulator counts real elapsed
+    # time, the threshold is recalibrated to match that validated behaviour.
+    ped_conflict_persist_s: float = 0.4
+    # A conflict is a person ON the road, close to a vehicle that is actually
+    # moving - not merely "somewhere in a zone that holds two cars" (a zone is
+    # a sixth of the frame wide, so that fired for every pavement walker).
+    ped_vehicle_min_norm: float = 0.5    # body-widths/s: slower than this is not "moving"
+    ped_near_factor: float = 1.0         # max gap to the vehicle, in person heights
+    ped_min_aspect: float = 1.6          # pedestrians are tall boxes; seated riders are squarish
+    ped_rider_overlap: float = 0.25      # person box share inside a bike/motorbike = rider
+    ped_min_track_s: float = 0.5         # a track younger than this is likely a fragment
+    ped_dedupe_s: float = 5.0            # one alert per cluster of pedestrians ...
+    ped_dedupe_frac: float = 0.25        # ... within this share of the frame width
 
     # generic
     event_on: float = 1.0               # score needed to fire
@@ -103,7 +141,13 @@ class EngineConfig:
     # and it is retracted silently if the evidence falls apart before then.
     # 0.0 restores the old fire-immediately behaviour.
     confirm_jam_s: float = 1.0
-    confirm_accident_s: float = 1.5
+    # On top of collision_persist_s (0.6s), this used to add another 1.5s,
+    # requiring ~2.1s of unbroken post-impact overlap before an ACCIDENT is
+    # reported. Real crash footage rarely holds that long — vehicles spin
+    # apart, debris scatters, the camera shakes — so real collisions were
+    # going undetected. 0.3s still rejects single-frame occlusion jitter
+    # (which collision_persist_s already rejects on its own).
+    confirm_accident_s: float = 0.3
     confirm_stopped_s: float = 0.0
     confirm_ped_s: float = 0.0
     history_s: float = 6.0              # per-track history window
@@ -190,11 +234,14 @@ class _Track:
     motion: Optional[float] = None  # mean abs frame difference inside the box
     motion_ema: float = 0.0
     stopped_since: Optional[float] = None
+    born: Optional[float] = None  # first time this track id was seen
 
     def add(self, t: float, box: Tuple[float, float, float, float], cfg: EngineConfig,
             motion: Optional[float] = None) -> None:
         cx = (box[0] + box[2]) / 2.0
         cy = (box[1] + box[3]) / 2.0
+        if self.born is None:
+            self.born = t
         if motion is not None:
             self.motion = motion
             self.motion_ema = (0.6 * self.motion_ema + 0.4 * motion
@@ -234,6 +281,27 @@ class _Track:
     def box(self) -> Tuple[float, float, float, float]:
         return self.boxes[-1][1]
 
+    def net_speed(self, window: float = 1.0) -> Optional[float]:
+        """Speed from displacement over ~`window` seconds (px/s), or None when
+        the track is younger than that. Unlike the per-frame EMA, detector box
+        jitter does not accumulate over a second, so a crawling or standing
+        vehicle reads near zero whatever the frame rate."""
+        if len(self.hist) < 2:
+            return None
+        t1, x1, y1 = self.hist[-1]
+        for t0, x0, y0 in reversed(self.hist):
+            if t1 - t0 >= 0.9 * window:
+                return math.hypot(x1 - x0, y1 - y0) / (t1 - t0)
+        return None
+
+    def norm_speed(self, window: float = 1.0) -> Optional[float]:
+        """net_speed in body-widths per second (size-invariant)."""
+        v = self.net_speed(window)
+        if v is None:
+            return None
+        x1, y1, x2, y2 = self.box
+        return v / max(1.0, x2 - x1, 0.8 * (y2 - y1))
+
     def real_speed(self, cfg: EngineConfig) -> float:
         """Displacement speed with detector box-jitter removed.
 
@@ -268,6 +336,10 @@ class _Track:
                 drop = run_max - v
         self.dv_max = max(drop, self.dv_max * 0.99)
 
+    def max_raw_speed(self) -> float:
+        """Largest single-frame speed in the history window (px/s)."""
+        return max((v for _, v in self.raw_speeds), default=0.0)
+
     def delta_v(self) -> float:
         """Abrupt deceleration (px/s) seen in the last few seconds."""
         return self.dv_max
@@ -300,6 +372,15 @@ class EventEngine:
         self._scores: Dict[str, float] = defaultdict(float)
         self._last_fired: Dict[str, float] = defaultdict(lambda: -1e9)
         self._ped_acc: Dict[int, float] = {}  # pedestrian conflict evidence (s)
+        self._ped_last_t: Dict[int, float] = {}  # last update() time per ped track
+        self._ped_recent: List[Tuple[float, float, float]] = []  # (t, cx, cy) of fired alerts
+        # when each pair of tracks first started to qualify as a candidate
+        # (to judge how established they were when the contact began)
+        self._pair_since: Dict[Tuple[int, int], float] = {}
+        self._pair_seen: Dict[Tuple[int, int], float] = {}
+        self._scene_jam_since: Optional[float] = None
+        self._scene_crawling = False   # this frame: most of the road is crawling
+        self._ped_suppressed: set = set()  # ped tids already covered by a nearby alert
         # collision evidence (s): overlap alone is too noisy in dense traffic,
         # so it has to persist before we call it an accident
         self._collision_since: Optional[float] = None
@@ -474,21 +555,74 @@ class EventEngine:
                 z.jammed = False
                 z.jam_score = 0.0
 
+        # ---- scene-level test: is most of the visible road crawling? -----
+        # Whole visible road, not just the zone ROI (a jam does not stop at the
+        # ROI line). Motorbikes filter through queues at speed, so when there
+        # are enough four-wheelers the verdict is theirs alone.
+        pool: List[Tuple[_Track, float]] = []
+        slow_by_zone: Dict[Tuple[int, int], int] = defaultdict(int)
+        for tr in self.tracks.values():
+            if tr.cls not in VEHICLE_CLASSES or t - tr.last_seen > 0.5:
+                continue
+            if not self.on_road(tr.box):
+                continue
+            vn = tr.norm_speed()
+            if vn is not None:
+                pool.append((tr, vn))
+        cars = [(tr, vn) for tr, vn in pool if tr.cls not in RIDEABLE]
+        if len(cars) >= cfg.jam_min_total // 2:
+            pool = cars
+        n_total = len(pool)
+        n_slow = 0
+        for tr, vn in pool:
+            if vn < cfg.jam_norm_speed:
+                n_slow += 1
+                key = self._zone_of(*tr.centroid)
+                if key is not None:
+                    slow_by_zone[key] += 1
+        # hysteresis: easier to stay in a jam than to enter one
+        frac_need = cfg.jam_slow_frac * (0.75 if self._scene_crawling else 1.0)
+        self._scene_crawling = (n_total >= cfg.jam_min_total
+                                and n_slow >= frac_need * n_total)
+        if self._scene_crawling:
+            if self._scene_jam_since is None:
+                self._scene_jam_since = t
+        else:
+            self._scene_jam_since = None
+        scene_jam = (self._scene_jam_since is not None
+                     and t - self._scene_jam_since >= cfg.jam_persist_s)
+        if scene_jam:
+            for key, cnt in slow_by_zone.items():
+                if cnt >= 2 and key not in jammed_now:
+                    z = self.zones[key]
+                    z.jammed = True
+                    if z.jam_onset_t is None:
+                        z.jam_onset_t = self._scene_jam_since
+                    jammed_now[key] = z
+
+        if scene_jam:
+            jam_detail = (f"traffic jam: {n_slow} of {n_total} vehicles crawling "
+                          f"(< {cfg.jam_norm_speed} body-widths/s)")
+            jam_evidence = {"vehicles": n_total, "crawling": n_slow,
+                            "crawl_frac": round(n_slow / max(1, n_total), 2),
+                            "norm_speed_limit": cfg.jam_norm_speed}
+        else:
+            jam_detail = (f"{len(jammed_now)} congested zone(s)"
+                          + (f", slowest {_median([z.median_speed for z in jammed_now.values()]):.0f} px/s"
+                             if jammed_now else ""))
+            jam_evidence = ({"slowest_px_s": round(_median([z.median_speed for z in jammed_now.values()]), 1)}
+                            if jammed_now else {})
         self._emit(
             fired,
             key="JAM",
             t=t,
-            score=1.0 if jammed_now else 0.0,
+            score=1.0 if (jammed_now or scene_jam) else 0.0,
             event=Event(
                 type="JAM",
                 t=t,
                 zone=None,
-                detail=f"{len(jammed_now)} congested zone(s)"
-                + (f", slowest {_median([z.median_speed for z in jammed_now.values()]):.0f} px/s" if jammed_now else ""),
-                evidence=(
-                    {"slowest_px_s": round(_median([z.median_speed for z in jammed_now.values()]), 1)}
-                    if jammed_now else {}
-                ),
+                detail=jam_detail,
+                evidence=jam_evidence,
             ),
             extra_zones=set(jammed_now),
         )
@@ -571,15 +705,22 @@ class EventEngine:
         # (a) collision-like overlap of two recently-fast vehicles
         vehicles = [tr for tr in self.tracks.values() if tr.cls in MOVING_CLASSES and t - tr.last_seen <= 0.5]
         collision: Optional[Event] = None
+        if self._scene_crawling:
+            vehicles = []   # bumper-to-bumper contact is normal in a crawling queue
         for i in range(len(vehicles)):
             for j in range(i + 1, len(vehicles)):
                 a, b = vehicles[i], vehicles[j]
                 if math.hypot(a.centroid[0] - b.centroid[0], a.centroid[1] - b.centroid[1]) > 250:
                     continue
                 iou = iou_xyxy(a.box, b.box)
-                if iou >= cfg.collision_iou and max(a.speed, b.speed) < cfg.jam_speed_px_s \
+                if iou >= cfg.collision_iou and max(a.speed, b.speed) < cfg.collision_stopped_speed_px_s \
                         and max(a.peak, b.peak) >= cfg.collision_min_speed * 0.5:
                     dv = max(a.delta_v(), b.delta_v())
+                    self._onset(a, b, t)
+                    feat = self._pair_features(a, b, t)
+                    if (feat["age_at_onset_s"] < cfg.collision_min_age_s
+                            or feat["raw_peak_widths_s"] > cfg.max_plausible_widths_s):
+                        continue
                     if dv < cfg.collision_dv_px_s:
                         # overlap without a velocity jump: a merge or a
                         # queue bumper, not an impact
@@ -597,46 +738,63 @@ class EventEngine:
                             "dv_px_s": round(dv, 1),
                             "speeds_px_s": (round(a.speed, 1), round(b.speed, 1)),
                             "peaks_px_s": (round(a.peak, 1), round(b.peak, 1)),
+                            **feat,
                         },
                     )
                     break
             if collision:
                 break
 
-        # (b) zone speed collapse: median fell >= collapse_drop_frac within window
-        #     AND the vehicle count did not grow (queue growth is not a crash)
+        # (b) pile-up: several vehicles that were each moving fast lost most of
+        #     that speed abruptly and now stand next to each other. Judged per
+        #     vehicle - a zone's *median* speed also drops when one big vehicle
+        #     passes close to the camera or cars simply leave the zone, which
+        #     is not a crash.
         collapse: Optional[Event] = None
-        for key, hist in self._zone_speed_hist.items():
-            vals = [(tt, v) for tt, v in hist if t - tt <= 4.0]
-            if len(vals) < 6:
-                continue
-            recent = _median([v for tt, v in vals if t - tt <= 1.0], 0.0)
-            before_vals = [v for tt, v in vals if 1.5 <= t - tt <= 4.0]
-            if not before_vals:
-                continue
-            before = _median(before_vals, 0.0)
-            if before >= cfg.collapse_min_before and recent <= before * (1 - cfg.collapse_drop_frac):
-                chist = self._zone_count_hist.get(key, [])
-                cnt_recent = _median([c for tt, c in chist if t - tt <= 1.0], 0)
-                cnt_before = _median([c for tt, c in chist if 1.5 <= t - tt <= 4.0], 0)
-                if cnt_recent > cnt_before + 1:
-                    continue  # cars are piling up -> queue, not collapse
-                z = self.zones[key]
-                if z.vehicles >= 2:
+        hit = []
+        for tr in vehicles:
+            sp = tr.real_speed(cfg)
+            if (tr.peak >= cfg.collapse_min_before
+                    and sp <= tr.peak * (1 - cfg.collapse_drop_frac)
+                    and tr.delta_v() >= cfg.collapse_drop_frac * tr.peak
+                    and self.on_road(tr.box)):
+                hit.append(tr)
+        for i in range(len(hit)):
+            for j in range(i + 1, len(hit)):
+                a_, b_ = hit[i], hit[j]
+                wmax = max(a_.box[2] - a_.box[0], b_.box[2] - b_.box[0])
+                gap = _box_gap(a_.box, b_.box)
+                if gap > 0.3 * wmax:
+                    continue
+                self._onset(a_, b_, t)
+                feat = self._pair_features(a_, b_, t)
+                if (feat["age_at_onset_s"] < cfg.pileup_min_age_s
+                        or feat["peak_widths_s"] < cfg.pileup_min_peak_widths_s
+                        or feat["raw_peak_widths_s"] > cfg.max_plausible_widths_s):
+                    continue
+                if True:
                     collapse = Event(
                         type="ACCIDENT",
                         t=t,
-                        zone=key,
-                        detail=f"speed collapsed {before:.0f}->{recent:.0f} px/s",
+                        zone=self._zone_of(*a_.centroid),
+                        track_ids=(a_.tid, b_.tid),
+                        detail=f"pile-up: #{a_.tid} and #{b_.tid} stopped abruptly side by side",
+                        bbox=_union_box(a_.box, b_.box),
                         evidence={
-                            "before_px_s": round(before, 1),
-                            "recent_px_s": round(recent, 1),
-                            "drop_frac": round(cfg.collapse_drop_frac, 2),
+                            "peaks_px_s": (round(a_.peak, 1), round(b_.peak, 1)),
+                            "speeds_px_s": (round(a_.speed, 1), round(b_.speed, 1)),
+                            "dv_px_s": (round(a_.delta_v(), 1), round(b_.delta_v(), 1)),
+                            "gap_px": round(gap, 1),
+                            **feat,
                         },
                     )
                     break
+            if collapse:
+                break
 
-        # the overlap must persist; one frame of jitter is just occlusion
+        # the condition must persist; one frame of jitter is just occlusion.
+        # Both the overlap rule and the pile-up rule go through the same gate.
+        collision = collision or collapse
         if collision is not None:
             if self._collision_since is None:
                 self._collision_since = t
@@ -649,15 +807,46 @@ class EventEngine:
             self._collision_since = None
             collision_score = 0.0
 
-        ev = collision or collapse
+        self._prune_pairs(t)
+        ev = collision
         self._emit(
             fired,
             key="ACCIDENT",
             t=t,
-            score=collision_score if collision_score > 0 else (1.0 if collapse else 0.0),
+            score=collision_score,
             event=ev or Event(type="ACCIDENT", t=t),
             cool_down_override=10.0,
         )
+
+    def _onset(self, a: "_Track", b: "_Track", t: float) -> float:
+        """Time this pair first qualified as a candidate (kept while it persists)."""
+        key = (min(a.tid, b.tid), max(a.tid, b.tid))
+        self._pair_seen[key] = t
+        return self._pair_since.setdefault(key, t)
+
+    def _prune_pairs(self, t: float) -> None:
+        for key in [k for k in self._pair_since if self._pair_seen.get(k, -1e9) < t - 0.7]:
+            del self._pair_since[key]
+            self._pair_seen.pop(key, None)
+
+    def _pair_features(self, a: "_Track", b: "_Track", t: float) -> dict:
+        """Size-invariant facts about a collision candidate (audit + gating)."""
+        def width(tr):
+            x1, y1, x2, y2 = tr.box
+            return max(1.0, x2 - x1, 0.8 * (y2 - y1))
+        area = lambda tr: (tr.box[2] - tr.box[0]) * (tr.box[3] - tr.box[1])
+        key = (min(a.tid, b.tid), max(a.tid, b.tid))
+        onset = self._pair_since.get(key, t)
+        born = max(t if a.born is None else a.born, t if b.born is None else b.born)
+        return {
+            "min_area_frac": round(min(area(a), area(b)) / float(self.frame_w * self.frame_h), 5),
+            "dv_widths_s": round(max(a.delta_v() / width(a), b.delta_v() / width(b)), 2),
+            "peak_widths_s": round(max(a.peak / width(a), b.peak / width(b)), 2),
+            "raw_peak_widths_s": round(max(a.max_raw_speed() / width(a),
+                                           b.max_raw_speed() / width(b)), 2),
+            # how established the youngest track was when the contact began
+            "age_at_onset_s": round(onset - born, 1),
+        }
 
     # ---------------------------------------------------- stopped vehicles
     def _check_stopped(self, t: float, fired: List[Event], area_k: float) -> None:
@@ -709,23 +898,56 @@ class EventEngine:
     # ------------------------------------------------------ pedestrian conflict
     def _check_pedestrian(self, t: float, fired: List[Event]) -> None:
         cfg = self.cfg
+        # "moving" means actually travelling (net displacement over ~1s, in
+        # body-widths/s), not wobbling: a queue crawling at 0.2 widths/s is no
+        # threat to someone walking between the cars.
+        movers = [v for v in self.tracks.values()
+                  if v.cls in VEHICLE_CLASSES and t - v.last_seen <= 0.5
+                  and (v.norm_speed() or 0.0) >= cfg.ped_vehicle_min_norm]
         # accumulate evidence over time so a single frame never fires
         cond_active = set()
         for tr in self.tracks.values():
             if tr.cls != "person" or t - tr.last_seen > 0.5:
                 continue
-            cx, cy = tr.centroid
-            key = self._zone_of(cx, cy)
+            if tr.born is None or t - tr.born < cfg.ped_min_track_s:
+                continue
+            key = self._zone_of(*tr.centroid)
             if key is None:
                 continue
-            z = self.zones[key]
-            if z.vehicles < cfg.ped_conflict_min_vehicles:
+            x1, y1, x2, y2 = tr.box
+            ph = max(1.0, y2 - y1)
+            if ph / max(1.0, x2 - x1) < cfg.ped_min_aspect:
+                continue  # torso-only box: a rider whose bike the detector missed
+            if any(v.cls in RIDEABLE and t - v.last_seen <= 0.5
+                   and (_overlap_frac(tr.box, v.box) >= cfg.ped_rider_overlap
+                        or _box_gap(tr.box, v.box) <= 0.5 * ph)
+                   for v in self.tracks.values()):
+                continue  # a rider is part of the vehicle, not a pedestrian
+            if not self.on_road((x1, y2 - 0.15 * ph, x2, y2 + 0.05 * ph)):
+                continue  # standing on the pavement, not in the roadway
+            near = None
+            for v in movers:
+                if _box_gap(tr.box, v.box) <= cfg.ped_near_factor * ph:
+                    near = v
+                    break
+            if near is None:
                 continue
             cond_active.add(tr.tid)
-            acc = self._ped_acc.get(tr.tid, 0.0) + 0.1  # one frame ≈ 0.1s
+            # accumulate real elapsed time, not a fixed per-call increment
+            last_t = self._ped_last_t.get(tr.tid, t)
+            dt = max(0.0, min(t - last_t, 0.2))
+            self._ped_last_t[tr.tid] = t
+            acc = self._ped_acc.get(tr.tid, 0.0) + dt
             self._ped_acc[tr.tid] = acc
-            if acc < cfg.ped_conflict_persist_s:
+            if acc < cfg.ped_conflict_persist_s or tr.tid in self._ped_suppressed:
                 continue
+            cx, cy = tr.centroid
+            self._ped_recent = [r for r in self._ped_recent if t - r[0] < cfg.ped_dedupe_s]
+            radius = cfg.ped_dedupe_frac * self.frame_w
+            if any(math.hypot(cx - rx, cy - ry) < radius for _, rx, ry in self._ped_recent):
+                self._ped_suppressed.add(tr.tid)  # same cluster, already reported
+                continue
+            self._ped_recent.append((t, cx, cy))
             self._emit(
                 fired,
                 key=f"PED:{tr.tid}",
@@ -735,10 +957,12 @@ class EventEngine:
                     type="PED_CONFLICT",
                     t=t,
                     zone=key,
-                    track_ids=(tr.tid,),
-                    detail=f"person#{tr.tid} in roadway with {z.vehicles} vehicles",
-                    bbox=tr.box,
-                    evidence={"vehicles": z.vehicles,
+                    track_ids=(tr.tid, near.tid),
+                    detail=f"person#{tr.tid} on the road next to moving {near.cls}#{near.tid}",
+                    bbox=_union_box(tr.box, near.box),
+                    evidence={"vehicle_id": near.tid,
+                              "vehicle_speed_px_s": round(near.speed, 1),
+                              "gap_px": round(_box_gap(tr.box, near.box), 1),
                               "ped_speed_px_s": round(tr.speed, 1)},
                 ),
                 cool_down_override=8.0,
@@ -749,6 +973,7 @@ class EventEngine:
                 self._ped_acc[tid] = max(0.0, self._ped_acc[tid] - 0.3)
                 if self._ped_acc[tid] == 0.0:
                     del self._ped_acc[tid]
+                    self._ped_last_t.pop(tid, None)
 
     # ------------------------------------------------------------------ emit
     def _emit(
@@ -853,6 +1078,20 @@ class EventEngine:
         if not px_per_meter:
             return None
         return px_per_s / px_per_meter * 3.6
+
+
+def _overlap_frac(a, b) -> float:
+    """Share of box `a` that lies inside box `b`."""
+    iw = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    ih = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    return iw * ih / max(1e-6, (a[2] - a[0]) * (a[3] - a[1]))
+
+
+def _box_gap(a, b) -> float:
+    """Pixel distance between two xyxy boxes (0 when they touch or overlap)."""
+    dx = max(0.0, max(a[0], b[0]) - min(a[2], b[2]))
+    dy = max(0.0, max(a[1], b[1]) - min(a[3], b[3]))
+    return math.hypot(dx, dy)
 
 
 def _union_box(a, b):

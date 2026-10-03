@@ -109,3 +109,79 @@ def test_unknown_event_type_passes_through():
     assert v.agrees
     assert v.passthrough
     assert adj.calls == 0  # never asked the model
+
+
+# ----------------------------------------------------------------- scout
+from traffic_watch.adjudicator import VLMScout, SCENE_QUESTIONS
+
+
+class ScriptedPipe:
+    def __init__(self, answers):
+        self.answers = list(answers)
+        self.asked = []
+
+    def __call__(self, image, prompt=None):
+        self.asked.append(prompt)
+        return [{"generated_text": self.answers.pop(0)}]
+
+
+def _scout(answers, **kw):
+    adj = VLMAdjudicator(model_id="fake")
+    adj._pipe = ScriptedPipe(answers)
+    return VLMScout(adj, interval_s=1.0, cooldown_s=10.0, kinds=("JAM",), **kw), adj
+
+
+def test_scout_needs_two_consecutive_yes():
+    sc, _ = _scout(["yes", "no", "yes"])
+    img = make_image()
+    assert sc.scan(img, 0.0) == []
+    assert sc.scan(img, 1.0) == []
+    assert sc.scan(img, 2.0) == []           # yes after a no restarts the streak
+
+
+def test_scout_fires_after_two_yes_then_cools_down():
+    sc, _ = _scout(["yes", "yes", "yes", "yes"])
+    img = make_image()
+    assert sc.scan(img, 0.0) == []
+    ev = sc.scan(img, 1.0)
+    assert len(ev) == 1 and ev[0].type == "JAM"
+    assert ev[0].evidence["source"] == "vlm"
+    assert sc.scan(img, 2.0) == []           # cooldown
+    assert sc.scan(img, 3.0) == []
+
+
+def test_scout_samples_on_its_interval_only():
+    sc, adj = _scout(["no", "no"])
+    img = make_image()
+    sc.scan(img, 0.0)
+    sc.scan(img, 0.3)
+    sc.scan(img, 0.6)
+    assert adj.calls == 1
+
+
+def test_scout_skips_kinds_the_engine_already_reports():
+    sc, adj = _scout(["yes", "yes"])
+    img = make_image()
+    assert sc.scan(img, 0.0, skip={"JAM"}) == []
+    assert adj.calls == 0
+
+
+def test_scout_survives_a_missing_model():
+    adj = VLMAdjudicator(model_id="no-such-model")
+    adj._ensure_pipe = lambda: False
+    sc = VLMScout(adj, interval_s=1.0, kinds=("JAM", "ACCIDENT"))
+    assert sc.scan(make_image(), 0.0) == []
+
+
+def test_scene_questions_cover_what_the_scout_asks():
+    assert {"JAM", "ACCIDENT"} <= set(SCENE_QUESTIONS)
+
+
+def test_scene_events_are_judged_on_the_whole_frame():
+    adj = VLMAdjudicator(model_id="fake")
+    pipe = FakePipe("yes")
+    adj._pipe = pipe
+    adj.verify(make_image(), make_event("JAM", bbox=(100, 100, 150, 150)))
+    adj.verify(make_image(), make_event("PED_CONFLICT", bbox=(100, 100, 150, 150)))
+    assert pipe.images[0].shape[:2] == (720, 1280)          # full frame
+    assert pipe.images[1].shape[0] < 720                    # crop

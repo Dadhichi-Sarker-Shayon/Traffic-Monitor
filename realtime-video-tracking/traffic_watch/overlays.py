@@ -69,9 +69,14 @@ def draw_zones(img, engine: EventEngine, cfg: EngineConfig) -> None:
             lbl = f"{z.vehicles}v {z.median_speed:.0f}px/s"
             _put_label(img, lbl, (x1 + 4, y1 + 16), (255, 255, 255), scale=0.42, bg=(40, 40, 40))
     # alpha-blend the tinted copy back (only where it actually changed)
-    diff = cv2.cvtColor(cv2.absdiff(ov, img), cv2.COLOR_BGR2GRAY) > 0
-    blended = cv2.addWeighted(img, 0.55, ov, 0.45, 0)
-    img[diff] = blended[diff]
+    # only the zone region can have changed; working on that slice (and
+    # masking with copyto rather than fancy indexing) keeps 4K frames from
+    # allocating hundreds of MB of index arrays per frame
+    _, ry1, _, ry2 = engine.roi
+    ov_r, img_r = ov[ry1:ry2], img[ry1:ry2]
+    changed = cv2.absdiff(ov_r, img_r).any(axis=2)
+    blended = cv2.addWeighted(img_r, 0.55, ov_r, 0.45, 0)
+    np.copyto(img_r, blended, where=changed[..., None])
 
 
 def draw_psg(img, psg: PSGResult, *, show_masks=True, show_relations=True) -> None:
@@ -112,11 +117,18 @@ def draw_psg(img, psg: PSGResult, *, show_masks=True, show_relations=True) -> No
                         (240, 240, 240), 1, cv2.LINE_AA)
 
 
-def draw_tracks(img, engine: EventEngine, dets=None, *, px_per_meter=None) -> None:
+def draw_tracks(img, engine: EventEngine, t: float, dets=None, *, px_per_meter=None) -> None:
     from .events import VEHICLE_CLASSES
 
     for tr in engine.tracks.values():
         if tr.cls not in VEHICLE_CLASSES | {"person"}:
+            continue
+        # a track not seen this frame (occlusion, a missed detection, the
+        # tracker briefly losing it) still lives in engine.tracks for up to
+        # history_s so the event engine can reason about it - but drawing its
+        # last-known box here would paint a ghost rectangle that stays put
+        # while the real vehicle has already moved on.
+        if t - tr.last_seen > 0.5:
             continue
         x1, y1, x2, y2 = map(int, tr.box)
         col = CLASS_COLORS.get(tr.cls, (60, 220, 60))
