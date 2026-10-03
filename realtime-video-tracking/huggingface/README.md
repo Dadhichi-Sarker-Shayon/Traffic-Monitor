@@ -53,6 +53,24 @@ The matrix is computed at Ultralytics' validation confidence of 0.001, which inf
 "background" column. It still shows the real weak spots: **motorcycles, bicycles and people are mixed up with each other**
 (only about a third of motorcycles and bicycles are labelled correctly) and 40% of trucks are called cars.
 
+### Training log
+
+Validation metrics during training (VisDrone validation set, full per-epoch log in [`training/results.csv`](training/results.csv)):
+
+| epoch | mAP50 | mAP50-95 | precision | recall |
+|---|---|---|---|---|
+| 1 | 0.376 | 0.209 | 0.503 | 0.375 |
+| 5 | 0.451 | 0.258 | 0.593 | 0.418 |
+| 10 | 0.484 | 0.281 | 0.566 | 0.463 |
+| 15 | 0.517 | 0.305 | 0.615 | 0.488 |
+| 20 | 0.538 | 0.319 | 0.653 | 0.498 |
+| 26 | 0.560 | 0.335 | 0.662 | 0.511 |
+| 30 | 0.557 | 0.333 | 0.662 | 0.507 |
+
+Improvement was steady and had flattened by epoch 25-26; Ultralytics keeps the best epoch (26 by mAP50-95) as the
+shipped weights. The final re-validation above (0.553 / 0.333) differs slightly from the in-training log because it
+re-runs validation with the maximum detections raised to match the densest image (up to 902 objects).
+
 ## Limitations — please read
 
 - **Domain:** trained only on drone footage. In a small spot check on 24 frames, it found about twice as many vehicles
@@ -88,3 +106,16 @@ remapping). Reproduce with `notebooks/01_yolo_finetune_traffic.ipynb` in the Git
 - **Training data: VisDrone** (Tianjin University, AISKYEYE). It ships without a licence file and is intended for
   research use; check its terms before any commercial use. Cite: *Du et al., "Detection and Tracking Meet Drones
   Challenge", IEEE TPAMI 2022.*
+
+## Files in this repository
+
+| file | what |
+|---|---|
+| `yolov8s_traffic_best.pt` | the fine-tuned weights |
+| `training/args.yaml` | the exact training hyperparameters (paths are those of the Kaggle machine) |
+| `training/data.yaml` | the class mapping used for training |
+| `training/results.csv` | per-epoch losses and validation metrics |
+| `training/curves/` | F1, precision and recall curves against confidence |
+| `training/samples/` | validation images with the true boxes (`*_labels`) and this model's predictions (`*_pred`) |
+| `training/labels.jpg` | distribution of the remapped training labels |
+| `assets/` | confusion matrix, training curves, PR curve and results used on this page |
