@@ -29,3 +29,19 @@ pytest-cache-files-*/
 .idea/
 .vscode/
 Thumbs.db
+
+# Local scratch and archived experiments - never commit
+_archive/
+**/runs/
+
+# Test outputs and downloaded footage: only the curated demo outputs are tracked
+**/outputs/test_*
+**/sample_media/clips/yt_*
+
+# Other projects that live in this folder but are not part of this repository
+/image-scene-search/
+/media-scene-search/
+/scene-graph-captioner/
+/video-scene-graphs/
+/scripts/
+/sample_media/

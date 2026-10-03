@@ -1,0 +1,10 @@
+# Optional vision-language layer (--vlm / --vlm-scout). Install into an environment WITH a modern
+# torch/transformers; if OpenPSG lives in a different environment, run the VLM as a worker process:
+#   python -m traffic_watch ... --vlm --vlm-python "path/to/this/env/python"
+torch
+transformers>=4.49
+accelerate
+bitsandbytes
+peft
+safetensors
+pillow

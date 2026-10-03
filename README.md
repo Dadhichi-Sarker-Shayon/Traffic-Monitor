@@ -26,12 +26,14 @@ no GPU, no model — and is unit-tested on its own.
 ## Contents
 
 - [Quickstart](#quickstart)
+- [Results on real footage](#results-on-real-footage)
 - [What it detects](#what-it-detects)
-- [Verified runs](#verified-runs)
+- [Earlier verified runs](#earlier-verified-runs)
 - [CLI reference](#cli-reference)
 - [Repository layout](#repository-layout)
 - [Environment](#environment)
 - [Testing](#testing)
+- [Fine-tuning notebooks and models](#fine-tuning-notebooks-and-models)
 - [Known limitations](#known-limitations)
 - [Credits](#credits)
 
@@ -62,6 +64,28 @@ python -m traffic_watch --source sample_media/clips/demo_traffic.mp4 \
     --detections sample_media/clips/demo_gt.jsonl --no-psg --out outputs/demo_nopsg.mp4
 ```
 
+## Results on real footage
+
+Scored on **23 held-out YouTube clips** that were labelled *before* the system was run on them and never used for
+tuning (28 other clips were used for development). Method, labels and raw outputs:
+[`realtime-video-tracking/eval/real/REPORT.md`](realtime-video-tracking/eval/real/REPORT.md).
+
+| event | rules only | + VLM veto | + VLM veto + VLM scout |
+|---|---|---|---|
+| `JAM` | P 0.67 · R 0.50 | P 1.00 · R 0.50 | **P 1.00 · R 1.00** (4 of 4 jams, no false alarm) |
+| `ACCIDENT` | P 0.40 · R 0.29 | P 1.00 · R 0.14 | P 0.67 · R 0.29 (2 of 7 crashes) |
+| `STOPPED` | 3 false alarms, none correct | same | same |
+| `PED_CONFLICT` | 1 of 1, no false alarm | same | same |
+
+*P = precision, R = recall, counted per clip.* Read it honestly:
+
+- **Jam detection works** on recorded footage from a fixed camera.
+- **Accident detection does not yet**: 2 of 7 crashes were found, and the VLM veto trades missed crashes for fewer
+  false alarms. It is weakest on dashcam, cab-view and low-speed contact.
+- `STOPPED` fires on parked cars and cars waiting at lights when the OpenPSG road mask is not used (these runs did not use it).
+- **Small sample** (7 crash clips, 4 jam clips, 1 pedestrian clip): indicative, not precise. About 1-3 fps on a GTX 1650,
+  so this is for offline analysis, not live cameras.
+
 ## What it detects
 
 Every rule uses hysteresis (on/off thresholds), a persistence requirement, and
@@ -74,12 +98,13 @@ fire-immediately behaviour.
 
 | event | rule | confirmed after |
 |---|---|---|
-| `JAM` | zone with ≥3 vehicles on the road, median speed under threshold, held ≥4s | 1.0s |
-| `JAM_ORIGIN` | jammed zone whose onset is clearly earliest → where the queue started | 1.0s |
-| `JAM_FRONT` | adjacent zone still flowing → the head of the queue | 1.0s |
-| `ACCIDENT` | two vehicles overlapping after fast motion, held ≥0.6s; or zone speed collapse (≥65%) with a stable vehicle count (queue growth excluded) | 1.5s |
-| `STOPPED` | vehicle stationary ≥8s in an *active* flow — suppressed inside jams and nose-to-tail queues | — |
-| `PED_CONFLICT` | person in a roadway zone with ≥2 vehicles, evidence accumulated ≥1s | — |
+| `JAM` | ≥8 on-road vehicles of which ≥65% are *crawling* (< 0.4 body-widths/s of **net** displacement over ~1 s; jitter-proof and size-independent; four-wheelers decide when there are enough, since motorbikes filter through queues), held ≥4 s. The older per-zone rule (≥3 vehicles, median speed under threshold) still applies | 1.0 s |
+| `JAM_ORIGIN` | jammed zone whose onset is clearly earliest → where the queue started | 1.0 s |
+| `JAM_FRONT` | adjacent zone still flowing → the head of the queue | 1.0 s |
+| `ACCIDENT` | (a) two *established* tracks (≥1.5 s old when contact began) overlapping after fast motion with an abrupt deceleration, held ≥0.6 s; or (b) a pile-up: ≥2 vehicles that each lost ≥65% of a recent fast speed abruptly and now stand side by side (tracks ≥3 s old). Raw speeds above 25 body-widths/s (a track ID jumping between cars) are rejected, and overlap detection is suspended while the whole road is crawling | 0.3 s |
+| `STOPPED` | vehicle stationary ≥8 s in an *active* flow — suppressed inside jams and nose-to-tail queues | — |
+| `PED_CONFLICT` | a tall person track ≥0.5 s old, *on the road* (OpenPSG road mask), within one body-height of a vehicle that is really moving, for ≥0.4 s of real time; riders on bikes and motorbikes are excluded; one alert per pedestrian cluster | — |
+| *VLM scout* (optional, `--vlm-scout`) | every few seconds a vision-language model looks at a clean whole frame and is asked if a crash is happening / the road is jammed; two consecutive "yes" answers raise the event | — |
 
 Three things make "cars standing still on the road" mean what it says:
 
@@ -106,8 +131,10 @@ detector box jitter, tracker ID swaps — and firing on the first overlapping
 frame produced two phantom accidents on the aerial clip. Requiring the overlap
 to hold removed both.
 
-## Verified runs
+## Earlier verified runs
 
+These runs were made **before the rule rework** described under *Results on real footage*; the videos in
+`realtime-video-tracking/outputs/` were not regenerated, so event counts will differ from a fresh run.
 Measured on an NVIDIA GTX 1650 (4 GB).
 
 | clip | frames | result |
@@ -145,16 +172,21 @@ re-running anything.
 | `--out` | – | annotated output video |
 | `--log` | alongside `--out` | JSONL event log |
 | `--detections` | – | ground-truth JSONL, skips YOLO (deterministic runs) |
+| `--weights` | `yolov8s.pt` | YOLO weights (class ids must follow COCO; see the fine-tuned model below) |
+| `--conf` / `--iou` | 0.55 / 0.6 | YOLO confidence / NMS IoU |
+| `--imgsz` | 640 | YOLO input size; raise to 960-1280 for tall or high-resolution footage |
+| `--device` / `--psg-device` | `cuda:0` / same | inference device; `--psg-device cpu` keeps OpenPSG off a small GPU |
 | `--no-psg` | off | disable the OpenPSG scene-graph layer |
 | `--psg-interval N` | 30 | run OpenPSG every N frames (`0` = off) |
-| `--conf` | 0.35 | YOLO confidence threshold |
-| `--device` | `cuda:0` | `cuda:0` or `cpu` |
+| `--psg-rel-thresh` / `--psg-classes` | 0.55 / traffic set | scene-graph relation score floor / classes kept |
 | `--max-frames N` | – | stop after N frames |
-| `--num-rel` | 12 | relations kept per scene-graph frame |
 | `--grid-cols` / `--grid-rows` | 6 / 3 | congestion zone grid |
-| `--jam-speed-mode` | `abs` | `abs` fixed px/s · `auto` relative to this clip · `metric` m/s via `--px-per-meter` |
-| `--jam-speed-rel-frac` | 0.25 | `auto` mode: congested below this share of the scene speed |
-| `--confirm-jam` / `--confirm-accident` | 1.0 / 1.5 | seconds a candidate must survive before it is reported |
+| `--jam-speed-mode` | `auto` | `abs` fixed px/s · `auto` relative to this clip · `metric` m/s via `--px-per-meter` |
+| `--confirm-jam` / `--confirm-accident` | 1.0 / 0.3 | seconds a candidate must survive before it is reported |
+| `--collision-dv` | 25 | px/s speed drop a collision overlap must show |
+| `--vlm` | off | have a VLM check every fired event (can veto, never invents) |
+| `--vlm-scout` / `--vlm-scout-interval` | off / 4 | let the VLM propose jams/crashes from sampled whole frames |
+| `--vlm-model` / `--vlm-python` / `--vlm-adapter` | Qwen2-VL-2B / – / – | VLM id; python of an env that has `transformers` (runs it as a worker process); optional LoRA adapter |
 | `--no-road-mask` | off | ignore the OpenPSG road region when counting vehicles |
 | `--px-per-meter` | – | calibration: report km/h instead of px/s |
 | `--show` | off | live preview window |
@@ -164,18 +196,28 @@ re-running anything.
 ```
 realtime-video-tracking/
   traffic_watch/
-    capture.py    file | webcam | rtsp source abstraction
-    detector.py   YOLOv8 + ByteTrack wrapper (COCO vehicles/persons)
-    psg.py        OpenPSG PSGTR adapter (mmdet 2.x) + threaded runner
-    events.py     EventEngine — all decision heuristics (pure, tested)
-    overlays.py   zones, masks, relation edges, tracks, event banners
-    __main__.py   CLI
-  tools/          demo-clip generator, YOLO and OpenPSG smoke tests
-  tests/          event-engine unit tests
-  sample_media/   source clips
-  outputs/        annotated videos + event logs
+    capture.py        file | webcam | rtsp source abstraction
+    detector.py       YOLOv8 + ByteTrack wrapper (COCO vehicles/persons)
+    tracker.yaml      ByteTrack settings (long buffer, strict re-association)
+    psg.py            OpenPSG PSGTR adapter (mmdet 2.x) + threaded runner
+    events.py         EventEngine — all decision heuristics (pure, tested)
+    adjudicator.py    optional VLM: veto fired events + the "scout"
+    vlm_backend.py    Qwen2-VL (4-bit) in-process or as a worker process
+    motion.py         pixel-motion signal inside each vehicle box
+    overlays.py       zones, masks, relation edges, tracks, event banners
+    __main__.py       CLI
+  tests/              58 unit tests (event engine, VLM adjudicator, live pipeline)
+  tools/
+    eval_real/        scripts that produced the real-footage evaluation
+    ...               demo-clip generator, labelling loop, YOLO / OpenPSG smoke tests
+  eval/
+    real/             labels, raw results and REPORT.md of the real-footage evaluation
+  notebooks/          three Kaggle fine-tuning notebooks (YOLO, VLM QLoRA, fast classifier)
+  weights/            (git-ignored) fine-tuned weights go here
+  sample_media/       source clips
+  outputs/            annotated videos + event logs from earlier runs
 third_party/
-  openpsg/        OpenPSG (git submodule, pinned to 34b2a89)
+  openpsg/            OpenPSG (git submodule, pinned to 34b2a89)
 ```
 
 ## Environment
@@ -200,12 +242,13 @@ GTX 1650, so `--psg-interval` is the main knob between latency and cost.
 
 ```bash
 cd realtime-video-tracking
-python -m pytest tests/test_events.py -q      # 9 passed
+pip install -r requirements.txt pytest
+python -m pytest tests -q --ignore=tests/test_psg.py      # 58 passed, no GPU or model needed
 ```
 
-The suite feeds synthetic detection sequences into the event engine — jams that
-grow versus jams that form, hysteresis clearing, empty frames, and a regression
-test for the transient-overlap accident case — with no GPU or model required.
+The suite feeds synthetic detection sequences into the event engine — jams that form versus flow, hysteresis
+clearing, transient overlaps, pile-ups, pedestrians versus riders — and fake models into the VLM layer, so it runs
+without a GPU. `tests/test_psg.py` needs the OpenPSG (mmdet) environment.
 
 ## Evaluation
 
@@ -231,6 +274,14 @@ while `JAM` is a **state** (was it active during the window — reconstructed fr
 the log's transitions). Real footage and the synthetic clip are scored in
 separate cohorts so flat graphics never flatter the numbers.
 
+### Real-footage evaluation
+
+`eval/real/` holds the labels for 51 YouTube clips (28 development, 23 held-out), the raw outputs and
+[`REPORT.md`](realtime-video-tracking/eval/real/REPORT.md). Footage is not redistributed; the YouTube ids are in
+[`eval/real/clip_sources.json`](realtime-video-tracking/eval/real/clip_sources.json) so the clips can be fetched again. Scripts: `tools/eval_real/` (they contain the
+paths of the machine they were written on; edit the constants at the top). Labels are one person's, made from frame
+contact sheets — subjective, with clips marked *uncertain* excluded.
+
 ## Decision log: why the engine is being reworked
 
 The current rules were found to be wrong on real footage, and the useful part
@@ -255,10 +306,9 @@ is knowing *why*, because it rules out the obvious fix:
 
 Fine-tuning the detector fixes none of these. The order taken is therefore:
 measure first (the eval loop), then the `JAM` rework and the retrospective
-confirmation window (both done, both off-by-default where they change existing
-behaviour), and only then a damage-verification stage — locally, since this
-project runs offline on a 4 GB card. Fine-tuning a small damage classifier
-becomes justified only if local zero-shot verification measures out badly.
+confirmation window, then a VLM verification stage run locally on a 4 GB card.
+**Update:** the zero-shot VLM turned out useful (it finds jams and removes many false alarms), while a QLoRA
+fine-tune of it on public crash datasets made it *worse* on a held-out set (AUC 0.755 → 0.650) and was dropped.
 
 Confirmation has a real cost: on the synthetic clip the crash is now reported at
 6.9s instead of 4.7s, because it waits for the overlap to persist 0.6s and then
@@ -266,17 +316,33 @@ still be there 1.5s later. That is the intended trade — a decision that surviv
 contact with the next two seconds — but it is a trade, and `--confirm-* 0` gets
 the old timing back.
 
+## Fine-tuning notebooks and models
+
+`realtime-video-tracking/notebooks/` has three self-contained Kaggle notebooks; see its README for what was and was not tested.
+
+| notebook | result |
+|---|---|
+| `01_yolo_finetune_traffic` | YOLOv8s on VisDrone, classes remapped to the COCO ids this project uses. mAP50 0.26 → 0.55 on VisDrone's validation set (drone footage). Roughly twice as many vehicles found on elevated and fixed cameras in a small spot check, **fewer on a dashcam clip** — compare on your own footage before switching. The weights are **not published**; run the notebook to reproduce them. |
+| `02_vlm_crash_qlora` | adapter did **not** help (held-out AUC 0.755 → 0.650); not used. Kept for the method. |
+| `03_crash_classifier_fast` | written and tested on fake data only; **not run on real data**. |
+
+After running notebook 01, try the fine-tuned detector: `python -m traffic_watch --source clip.mp4 --weights weights/yolov8s_traffic_best.pt --imgsz 960`.
+
 ## Known limitations
 
-- **True top-down drone footage does not work.** The COCO-trained detector
+- **Accident detection is weak** (2 of 7 held-out crashes found). Dashcam / cab-view footage breaks the fixed-camera
+  assumption (a crash is reported late or missed), and low-speed contact is not detected by design.
+- **`STOPPED` over-fires on parked cars** unless the OpenPSG road mask is available.
+- Evaluation is small (51 clips, 7 crashes) and the labels are one person's.
+- **True top-down drone footage does not work with the stock detector.** The COCO-trained detector
   cannot see cars from directly overhead; this is a domain gap, not a tuning
   problem. Measured on `sample_media/clips/aerial_traffic.mp4` (1452 frames):
   at conf 0.35 / imgsz 640 there are zero vehicles on every sampled frame, and
   at conf 0.05 / imgsz 1280 only junk labels (`suitcase`, `cell phone`,
   `boat`, `airplane`). `drone_traffic.mp4` is higher altitude still. Fixing
   this needs aerial-trained weights (DOTA / VisDrone) or tiling plus rotation
-  for small objects. Both clips are kept in the repo so the finding stays
-  reproducible.
+  for small objects. A VisDrone-fine-tuned detector now exists (see above) but has **not been evaluated on these
+  clips**. Both clips are kept in the repo so the finding stays reproducible.
 - Events are geometric and heuristic. A collision is inferred from sustained
   overlap after fast motion, not from visual damage — it will not catch a crash
   where the vehicles separate cleanly, and dense parking can still look
@@ -294,3 +360,10 @@ the old timing back.
 - **OpenPSG / PSGTR** — Zhou et al., *Panoptic Scene Graph Generation*, ECCV 2022.
   Submodule pinned to `Jingkang50/OpenPSG` @ `34b2a89`.
 - **Ultralytics YOLO** and **ByteTrack** for detection and multi-object tracking.
+- **Qwen2-VL** (Alibaba) for the optional vision-language layer.
+- **VisDrone** — Du et al., *Detection and Tracking Meet Drones Challenge*, IEEE TPAMI 2022 (no licence file; research use).
+- Public crash datasets used in the notebooks: `suryaprabhakaran2005/road-accidents-from-cctv-footages-dataset`, `ckay16/accident-detection-from-cctv-footage` (Kaggle).
+
+## License
+
+**No license has been chosen yet.** Note that this project depends on Ultralytics YOLO (AGPL-3.0) and that the fine-tuned weights are derived from it, so AGPL-3.0 is the natural choice. Until a `LICENSE` file is added, all rights are reserved by the author.

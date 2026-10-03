@@ -90,18 +90,18 @@ default is the traffic-relevant set, empty string = all),
 
 Trust-tuning flags: `--conf/--iou` (YOLO confidence / NMS IoU),
 `--collision-dv` (speed drop a collision overlap must show, px/s,
-default 25), `--vlm` + `--vlm-model` (see below).
+default 25), `--imgsz` (raise to 1280 for tall/high-res footage so small far vehicles are detected), `--psg-device cpu` (keeps OpenPSG off a 4GB GPU), `--vlm`, `--vlm-scout`, `--vlm-python`, `--vlm-adapter`, `--vlm-model` (see below).
 
 ## How decisions are made
 
 | event | rule (all with hysteresis + persistence) |
 |---|---|
-| `JAM` | zone with ≥3 vehicles and median speed < 18 px/s, held ≥4s |
+| `JAM` | ≥8 on-road vehicles of which ≥65% are crawling (< 0.4 body-widths/s of *net* displacement over ~1s — jitter-free and size-invariant; four-wheelers decide when there are enough, since motorbikes filter through queues), held ≥4s; the older per-zone rule (≥3 vehicles, median < 18 px/s) still applies. Overlap-accident detection is suspended while the road is crawling (bumper contact in a queue is normal) |
 | `JAM_ORIGIN` | jammed zone whose onset is clearly earliest → the queue's start |
 | `JAM_FRONT` | adjacent zone still flowing → where the queue ends |
-| `ACCIDENT` | two vehicles overlapping while both just stopped after fast motion **and** the overlap persists ≥0.6s **and** at least one of them decelerated abruptly (Δv ≥ `--collision-dv`, 25 px/s within 0.5s) — overlap without a speed jump is a merge or queue bumper, not an impact; **or** zone speed collapse (≥65%) with stable vehicle count (queue growth excluded) |
+| `ACCIDENT` | two vehicles overlapping while both just stopped after fast motion **and** the overlap persists ≥0.6s **and** at least one of them decelerated abruptly (Δv ≥ `--collision-dv`, 25 px/s within 0.5s) — overlap without a speed jump is a merge or queue bumper, not an impact; **or** a pile-up: ≥2 vehicles that each lost ≥65% of a recent fast speed abruptly (Δv) and now stand side by side. Both go through the same sustained-hold gate (0.6s + 0.3s confirm) |
 | `STOPPED` | vehicle stationary ≥8s in an *active* flow — suppressed inside jams / nose-to-tail queues |
-| `PED_CONFLICT` | person in a roadway zone with ≥2 vehicles, evidence accumulated ≥1s |
+| `PED_CONFLICT` | tall (aspect ≥1.6) person track ≥0.5s old, on the road (PSG road mask), within one body-height of a *moving* vehicle, for ≥0.4s of real time; riders on bikes/motorbikes are excluded and one alert is issued per pedestrian cluster (5s / quarter-frame radius) |
 
 Scene-graph cues (e.g. PSG's `about to hit`, `crossing`) come from the OpenPSG
 layer and are logged alongside; the event log's `kind:"psg"` rows carry the
@@ -116,26 +116,37 @@ the remaining false positive: two cars that gently merge (or a queue bumper
 that taps the car ahead) overlap and stop, but neither shows the velocity
 discontinuity of an impact.
 
-### VLM adjudication (`--vlm`)
+### VLM (`--vlm`, `--vlm-scout`)
 
-The engine *proposes*; a vision-language model can *check*. With `--vlm`,
-every fired event is cropped (bbox + 15% pad) and shown to the model
-(default `Qwen/Qwen2.5-VL-7B-Instruct`, any image-to-text VLM works via
-`--vlm-model`) together with a fixed yes/no question for the event type.
+The default model is **Qwen2-VL-2B-Instruct in 4-bit** (about 1.5 GB of VRAM, roughly
+4-9 s per question on a GTX 1650). OpenPSG needs the old torch 1.13 stack, which cannot host
+a modern `transformers`, so the VLM can run as a **worker process** in another interpreter:
 
-Adjudication is a verification layer, never a trigger:
+```bash
+python -m traffic_watch --source clip.mp4 --vlm --vlm-scout     --vlm-python "C:/Python314/python.exe" --psg-device cpu --imgsz 960
+```
 
-- **agreement** → the event is reported, with the model's answer in `detail`
-- **veto** → the event is withdrawn (`engine.retract`) and logged as
-  `{"kind": "veto"}`; the rule may fire again after its normal cooldown,
-  so the model gets a second chance on the next frames
-- **no opinion** (model missing, load error, unparseable answer) →
-  passthrough, i.e. the previous behaviour; nothing is invented and no
-  real incident is silently dropped
+Two roles, both off unless asked for:
+
+- **Adjudication (`--vlm`)** - every fired event is shown to the model with a fixed yes/no
+  question. ACCIDENT and JAM are judged on the **whole frame** (a tight crop of two distant
+  cars hides the road and the wreckage); PED_CONFLICT and STOPPED on a crop. Agreement keeps
+  the event, a "no" withdraws it (`engine.retract`, logged as `{"kind":"veto"}`), and no
+  opinion (model missing, unparseable answer) passes the event through unchanged.
+- **Scout (`--vlm-scout`)** - the one place the model can *create* an event. Every
+  `--vlm-scout-interval` seconds (default 4) of video it looks at a clean whole frame and
+  asks "is a crash happening?" and "is this road jammed?". Two consecutive yes answers raise
+  the event (`evidence.source = "vlm"`), then 20 s cooldown; kinds the engine already reports
+  are skipped.
+
+The model is always shown the **clean** frame, never the one with overlays burned in.
 
 End of run prints `[vlm] N checked, N confirmed, N vetoed, N passthrough`.
-GPU inference is required for real use; on a machine without it the whole
-layer degrades to passthrough (which is the point).
+
+## Fine-tuning (Kaggle notebooks)
+
+`notebooks/` has three self-contained Kaggle notebooks (YOLO on VisDrone, a QLoRA crash adapter for the VLM, and a fast
+crash classifier). See `notebooks/README.md` - including what was and was not tested.
 
 ## Dense traffic / high-angle test
 
