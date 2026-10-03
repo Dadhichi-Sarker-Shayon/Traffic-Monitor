@@ -1,0 +1,186 @@
+{
+ "all": {
+  "ACCIDENT": {
+   "tp": 2,
+   "fp": 4,
+   "fn": 5,
+   "tn": 14,
+   "precision": 0.3333333333333333,
+   "recall": 0.2857142857142857,
+   "f1": 0.30769230769230765,
+   "timed_ok": 1,
+   "timed_n": 2
+  },
+  "JAM": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 2,
+   "tn": 20,
+   "precision": 1.0,
+   "recall": 0.3333333333333333,
+   "f1": 0.5,
+   "timed_ok": 0,
+   "timed_n": 0
+  },
+  "STOPPED": {
+   "tp": 1,
+   "fp": 1,
+   "fn": 1,
+   "tn": 23,
+   "precision": 0.5,
+   "recall": 0.5,
+   "f1": 0.5,
+   "timed_ok": 0,
+   "timed_n": 0
+  },
+  "PED_CONFLICT": {
+   "tp": 2,
+   "fp": 7,
+   "fn": 1,
+   "tn": 14,
+   "precision": 0.2222222222222222,
+   "recall": 0.6666666666666666,
+   "f1": 0.3333333333333333,
+   "timed_ok": 0,
+   "timed_n": 0
+  }
+ },
+ "static": {
+  "ACCIDENT": {
+   "tp": 0,
+   "fp": 3,
+   "fn": 1,
+   "tn": 6,
+   "precision": 0.0,
+   "recall": 0.0,
+   "f1": 0.0,
+   "timed_ok": 0,
+   "timed_n": 0
+  },
+  "JAM": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 2,
+   "tn": 8,
+   "precision": 1.0,
+   "recall": 0.3333333333333333,
+   "f1": 0.5,
+   "timed_ok": 0,
+   "timed_n": 0
+  },
+  "STOPPED": {
+   "tp": 1,
+   "fp": 1,
+   "fn": 0,
+   "tn": 9,
+   "precision": 0.5,
+   "recall": 1.0,
+   "f1": 0.6666666666666666,
+   "timed_ok": 0,
+   "timed_n": 0
+  },
+  "PED_CONFLICT": {
+   "tp": 1,
+   "fp": 4,
+   "fn": 0,
+   "tn": 6,
+   "precision": 0.2,
+   "recall": 1.0,
+   "f1": 0.33333333333333337,
+   "timed_ok": 0,
+   "timed_n": 0
+  }
+ },
+ "moving": {
+  "ACCIDENT": {
+   "tp": 2,
+   "fp": 1,
+   "fn": 2,
+   "tn": 6,
+   "precision": 0.6666666666666666,
+   "recall": 0.5,
+   "f1": 0.5714285714285715,
+   "timed_ok": 1,
+   "timed_n": 2
+  },
+  "JAM": {
+   "tp": 0,
+   "fp": 0,
+   "fn": 0,
+   "tn": 9,
+   "precision": null,
+   "recall": null,
+   "f1": null,
+   "timed_ok": 0,
+   "timed_n": 0
+  },
+  "STOPPED": {
+   "tp": 0,
+   "fp": 0,
+   "fn": 1,
+   "tn": 10,
+   "precision": null,
+   "recall": 0.0,
+   "f1": null,
+   "timed_ok": 0,
+   "timed_n": 0
+  },
+  "PED_CONFLICT": {
+   "tp": 1,
+   "fp": 2,
+   "fn": 1,
+   "tn": 5,
+   "precision": 0.3333333333333333,
+   "recall": 0.5,
+   "f1": 0.4,
+   "timed_ok": 0,
+   "timed_n": 0
+  }
+ },
+ "interior": {
+  "ACCIDENT": {
+   "tp": 0,
+   "fp": 0,
+   "fn": 2,
+   "tn": 2,
+   "precision": null,
+   "recall": 0.0,
+   "f1": null,
+   "timed_ok": 0,
+   "timed_n": 0
+  },
+  "JAM": {
+   "tp": 0,
+   "fp": 0,
+   "fn": 0,
+   "tn": 3,
+   "precision": null,
+   "recall": null,
+   "f1": null,
+   "timed_ok": 0,
+   "timed_n": 0
+  },
+  "STOPPED": {
+   "tp": 0,
+   "fp": 0,
+   "fn": 0,
+   "tn": 4,
+   "precision": null,
+   "recall": null,
+   "f1": null,
+   "timed_ok": 0,
+   "timed_n": 0
+  },
+  "PED_CONFLICT": {
+   "tp": 0,
+   "fp": 1,
+   "fn": 0,
+   "tn": 3,
+   "precision": 0.0,
+   "recall": null,
+   "f1": null,
+   "timed_ok": 0,
+   "timed_n": 0
+  }
+ }
+}

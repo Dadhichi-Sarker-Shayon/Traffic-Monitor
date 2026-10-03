@@ -1,0 +1,774 @@
+{
+ "model": "Qwen/Qwen2-VL-2B-Instruct",
+ "crash": [
+  {
+   "clip": "crash_bridge",
+   "t": 9.0,
+   "truth": true,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_bridge",
+   "t": 11.5,
+   "truth": true,
+   "vlm": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "crash_dashcam71",
+   "t": 18.0,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_dashcam71",
+   "t": 39.0,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_headon",
+   "t": 16.0,
+   "truth": true,
+   "vlm": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "crash_headon",
+   "t": 45.0,
+   "truth": true,
+   "vlm": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "crash_headon",
+   "t": 18.5,
+   "truth": true,
+   "vlm": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "crash_headon",
+   "t": 47.5,
+   "truth": true,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_i5_pileup",
+   "t": 21.0,
+   "truth": true,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_i5_pileup",
+   "t": 23.5,
+   "truth": true,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_semis",
+   "t": 9.0,
+   "truth": true,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_semis",
+   "t": 11.5,
+   "truth": true,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_sideswipe",
+   "t": 9.0,
+   "truth": true,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_sideswipe",
+   "t": 11.5,
+   "truth": true,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_suv_truck",
+   "t": 17.0,
+   "truth": true,
+   "vlm": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "crash_suv_truck",
+   "t": 56.0,
+   "truth": true,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_suv_truck",
+   "t": 19.5,
+   "truth": true,
+   "vlm": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "crash_suv_truck",
+   "t": 58.5,
+   "truth": true,
+   "vlm": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "crash_tbone",
+   "t": 37.0,
+   "truth": true,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_tbone",
+   "t": 39.5,
+   "truth": true,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "jam_atlanta95",
+   "t": 9.3,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "jam_atlanta95",
+   "t": 20.1,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "jam_cctv",
+   "t": 18.0,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "jam_cctv",
+   "t": 39.0,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "jam_closecall",
+   "t": 8.8,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "jam_closecall",
+   "t": 19.0,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "jam_shockwave",
+   "t": 7.3,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "jam_shockwave",
+   "t": 15.8,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "jam_stock",
+   "t": 4.6,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "jam_stock",
+   "t": 9.9,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "jam_swiss",
+   "t": 7.3,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "jam_swiss",
+   "t": 15.7,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "jam_topryde",
+   "t": 5.7,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "jam_topryde",
+   "t": 12.2,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "flow_hikvision",
+   "t": 5.2,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "flow_hikvision",
+   "t": 11.2,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "flow_india_crossroad",
+   "t": 18.0,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "flow_india_crossroad",
+   "t": 39.0,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "flow_sysvideo",
+   "t": 14.3,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "flow_sysvideo",
+   "t": 31.0,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "flow_wet4lane",
+   "t": 11.0,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "flow_wet4lane",
+   "t": 23.8,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "ped_durham",
+   "t": 18.0,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "ped_durham",
+   "t": 39.0,
+   "truth": false,
+   "vlm": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "ped_grabfood",
+   "t": 7.2,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "ped_grabfood",
+   "t": 15.6,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "ped_nearmiss1",
+   "t": 5.0,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "ped_nearmiss1",
+   "t": 10.9,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "ped_nearmiss2",
+   "t": 9.5,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "ped_nearmiss2",
+   "t": 20.6,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "ped_runout",
+   "t": 5.6,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "ped_runout",
+   "t": 12.2,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "stalled_freeway",
+   "t": 7.6,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "stalled_freeway",
+   "t": 16.4,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  }
+ ],
+ "jam": [
+  {
+   "clip": "crash_bridge",
+   "t": 8.4,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_dashcam71",
+   "t": 30.0,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_headon",
+   "t": 24.1,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_i5_pileup",
+   "t": 15.7,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_la_intersection",
+   "t": 9.4,
+   "truth": false,
+   "vlm": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "crash_semis",
+   "t": 11.4,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_sideswipe",
+   "t": 9.5,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_suv_truck",
+   "t": 30.0,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_tbone",
+   "t": 19.2,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "jam_cctv",
+   "t": 30.0,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "jam_shockwave",
+   "t": 6.1,
+   "truth": true,
+   "vlm": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "jam_shockwave",
+   "t": 12.2,
+   "truth": true,
+   "vlm": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "jam_shockwave",
+   "t": 18.2,
+   "truth": true,
+   "vlm": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "jam_stock",
+   "t": 3.8,
+   "truth": true,
+   "vlm": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "jam_stock",
+   "t": 7.6,
+   "truth": true,
+   "vlm": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "jam_stock",
+   "t": 11.5,
+   "truth": true,
+   "vlm": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "jam_topryde",
+   "t": 4.7,
+   "truth": true,
+   "vlm": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "jam_topryde",
+   "t": 9.4,
+   "truth": true,
+   "vlm": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "jam_topryde",
+   "t": 14.1,
+   "truth": true,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "flow_hikvision",
+   "t": 8.6,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "flow_india_crossroad",
+   "t": 30.0,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "flow_sysvideo",
+   "t": 23.8,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "flow_wet4lane",
+   "t": 18.3,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "ped_durham",
+   "t": 30.0,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "ped_grabfood",
+   "t": 12.0,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "ped_nearmiss1",
+   "t": 8.4,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "ped_nearmiss2",
+   "t": 15.8,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "ped_runout",
+   "t": 9.3,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  },
+  {
+   "clip": "stalled_freeway",
+   "t": 12.6,
+   "truth": false,
+   "vlm": false,
+   "raw": "no"
+  }
+ ],
+ "adjudicate": [
+  {
+   "clip": "crash_dashcam71",
+   "type": "PED_CONFLICT",
+   "t": 30.9,
+   "truth": false,
+   "vlm_agrees": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_i5_pileup",
+   "type": "ACCIDENT",
+   "t": 30.1,
+   "truth": true,
+   "vlm_agrees": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_la_intersection",
+   "type": "PED_CONFLICT",
+   "t": 8.3,
+   "truth": false,
+   "vlm_agrees": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_suv_truck",
+   "type": "ACCIDENT",
+   "t": 12.6,
+   "truth": false,
+   "vlm_agrees": false,
+   "raw": "no"
+  },
+  {
+   "clip": "crash_suv_truck",
+   "type": "PED_CONFLICT",
+   "t": 39.0,
+   "truth": false,
+   "vlm_agrees": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "crash_suv_truck",
+   "type": "PED_CONFLICT",
+   "t": 41.8,
+   "truth": false,
+   "vlm_agrees": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "crash_tbone",
+   "type": "PED_CONFLICT",
+   "t": 24.0,
+   "truth": false,
+   "vlm_agrees": false,
+   "raw": "no"
+  },
+  {
+   "clip": "jam_closecall",
+   "type": "ACCIDENT",
+   "t": 1.1,
+   "truth": false,
+   "vlm_agrees": false,
+   "raw": "no"
+  },
+  {
+   "clip": "jam_stock",
+   "type": "JAM",
+   "t": 5.6,
+   "truth": true,
+   "vlm_agrees": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "jam_stock",
+   "type": "PED_CONFLICT",
+   "t": 8.8,
+   "truth": false,
+   "vlm_agrees": false,
+   "raw": "no"
+  },
+  {
+   "clip": "jam_topryde",
+   "type": "PED_CONFLICT",
+   "t": 4.7,
+   "truth": false,
+   "vlm_agrees": false,
+   "raw": "no"
+  },
+  {
+   "clip": "jam_topryde",
+   "type": "PED_CONFLICT",
+   "t": 15.5,
+   "truth": false,
+   "vlm_agrees": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "jam_topryde",
+   "type": "PED_CONFLICT",
+   "t": 16.6,
+   "truth": false,
+   "vlm_agrees": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "flow_hikvision",
+   "type": "STOPPED",
+   "t": 15.3,
+   "truth": true,
+   "vlm_agrees": false,
+   "raw": "no"
+  },
+  {
+   "clip": "flow_india_crossroad",
+   "type": "ACCIDENT",
+   "t": 21.5,
+   "truth": false,
+   "vlm_agrees": false,
+   "raw": "no"
+  },
+  {
+   "clip": "flow_sysvideo",
+   "type": "ACCIDENT",
+   "t": 10.0,
+   "truth": false,
+   "vlm_agrees": false,
+   "raw": "no"
+  },
+  {
+   "clip": "flow_sysvideo",
+   "type": "STOPPED",
+   "t": 26.9,
+   "truth": false,
+   "vlm_agrees": false,
+   "raw": "no"
+  },
+  {
+   "clip": "flow_wet4lane",
+   "type": "ACCIDENT",
+   "t": 18.6,
+   "truth": false,
+   "vlm_agrees": false,
+   "raw": "no"
+  },
+  {
+   "clip": "flow_wet4lane",
+   "type": "PED_CONFLICT",
+   "t": 26.6,
+   "truth": false,
+   "vlm_agrees": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "flow_wet4lane",
+   "type": "ACCIDENT",
+   "t": 29.6,
+   "truth": false,
+   "vlm_agrees": true,
+   "raw": "yes"
+  },
+  {
+   "clip": "ped_durham",
+   "type": "PED_CONFLICT",
+   "t": 37.3,
+   "truth": true,
+   "vlm_agrees": false,
+   "raw": "no"
+  },
+  {
+   "clip": "ped_runout",
+   "type": "PED_CONFLICT",
+   "t": 7.6,
+   "truth": true,
+   "vlm_agrees": true,
+   "raw": "yes."
+  },
+  {
+   "clip": "ped_runout",
+   "type": "PED_CONFLICT",
+   "t": 13.0,
+   "truth": true,
+   "vlm_agrees": true,
+   "raw": "yes."
+  }
+ ]
+}

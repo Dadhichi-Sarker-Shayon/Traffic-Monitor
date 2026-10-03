@@ -1,0 +1,728 @@
+{
+ "h_crash_entebbe": {
+  "dur": 48.08136666666667,
+  "events": [
+   [
+    "ACCIDENT",
+    11.5,
+    "pile-up: #1 and #3 stopped abruptly side by side, held 0.9s"
+   ]
+  ],
+  "boxes": [
+   [
+    "ACCIDENT",
+    11.5,
+    [
+     509.92156982421875,
+     419.90692138671875,
+     1097.3212890625,
+     699.0172119140625
+    ]
+   ]
+  ]
+ },
+ "h_crash_pampore": {
+  "dur": 60.0,
+  "events": [],
+  "boxes": []
+ },
+ "h_crash_truckcctv": {
+  "dur": 20.966666666666665,
+  "events": [],
+  "boxes": []
+ },
+ "h_crash_pickupcctv": {
+  "dur": 23.356666666666666,
+  "events": [
+   [
+    "ACCIDENT",
+    10.1,
+    "pile-up: #3 and #5 stopped abruptly side by side, held 0.9s"
+   ]
+  ],
+  "boxes": [
+   [
+    "ACCIDENT",
+    10.1,
+    [
+     1088.4056396484375,
+     185.68223571777344,
+     1280.0,
+     434.7186279296875
+    ]
+   ]
+  ]
+ },
+ "h_crash_roadtraffic": {
+  "dur": 45.0,
+  "events": [
+   [
+    "PED_CONFLICT",
+    40.3,
+    "person#81 on the road next to moving car#25"
+   ]
+  ],
+  "boxes": [
+   [
+    "PED_CONFLICT",
+    40.3,
+    [
+     667.9118041992188,
+     423.3173828125,
+     768.916259765625,
+     486.7080383300781
+    ]
+   ]
+  ]
+ },
+ "h_crash_bumpersmall": {
+  "dur": 31.0,
+  "events": [
+   [
+    "JAM",
+    12.3,
+    "traffic jam: 8 of 9 vehicles crawling (< 0.4 body-widths/s) zones=[(2, 0), (2, 1)]"
+   ],
+   [
+    "JAM_ORIGIN",
+    12.3,
+    "queue started here at t=7.3s"
+   ],
+   [
+    "JAM",
+    20.7,
+    "traffic jam: 9 of 10 vehicles crawling (< 0.4 body-widths/s) zones=[(2, 0)]"
+   ],
+   [
+    "JAM_ORIGIN",
+    20.9,
+    "queue started here at t=15.7s"
+   ],
+   [
+    "JAM_FRONT",
+    23.8,
+    "queue head / flow resumes"
+   ]
+  ],
+  "boxes": [
+   [
+    "JAM",
+    12.3,
+    null
+   ],
+   [
+    "JAM_ORIGIN",
+    12.3,
+    null
+   ],
+   [
+    "JAM",
+    20.7,
+    null
+   ],
+   [
+    "JAM_ORIGIN",
+    20.9,
+    null
+   ],
+   [
+    "JAM_FRONT",
+    23.8,
+    null
+   ]
+  ]
+ },
+ "h_crash_tbone_bv": {
+  "dur": 26.7,
+  "events": [],
+  "boxes": []
+ },
+ "h_crash_intersection_dc": {
+  "dur": 43.166666666666664,
+  "events": [],
+  "boxes": []
+ },
+ "h_crash_i71": {
+  "dur": 31.5315,
+  "events": [],
+  "boxes": []
+ },
+ "h_crash_tippers": {
+  "dur": 21.666666666666668,
+  "events": [],
+  "boxes": []
+ },
+ "h_crash_iowa_stopped": {
+  "dur": 23.5,
+  "events": [],
+  "boxes": []
+ },
+ "h_crash_kenya": {
+  "dur": 44.833333333333336,
+  "events": [
+   [
+    "STOPPED",
+    24.3,
+    "truck#2 stationary 8.0s in active traffic"
+   ]
+  ],
+  "boxes": [
+   [
+    "STOPPED",
+    24.3,
+    [
+     171.2008056640625,
+     138.17074584960938,
+     192.36541748046875,
+     159.9398956298828
+    ]
+   ]
+  ]
+ },
+ "h_intersection_surv": {
+  "dur": 48.06666666666667,
+  "events": [
+   [
+    "STOPPED",
+    16.7,
+    "car#6 stationary 16.7s in active traffic"
+   ],
+   [
+    "JAM",
+    19.9,
+    "traffic jam: 9 of 11 vehicles crawling (< 0.4 body-widths/s) zones=[]"
+   ],
+   [
+    "STOPPED",
+    27.5,
+    "car#4 stationary 27.5s in active traffic"
+   ],
+   [
+    "STOPPED",
+    27.9,
+    "car#8 stationary 27.0s in active traffic"
+   ]
+  ],
+  "boxes": [
+   [
+    "STOPPED",
+    16.7,
+    [
+     994.9077758789062,
+     35.99368667602539,
+     1071.5587158203125,
+     100.99116516113281
+    ]
+   ],
+   [
+    "JAM",
+    19.9,
+    null
+   ],
+   [
+    "STOPPED",
+    27.5,
+    [
+     694.4193725585938,
+     21.859968185424805,
+     789.6973266601562,
+     88.06539154052734
+    ]
+   ],
+   [
+    "STOPPED",
+    27.9,
+    [
+     625.0526733398438,
+     78.77239227294922,
+     717.6821899414062,
+     152.61590576171875
+    ]
+   ]
+  ]
+ },
+ "h_jam_saigon": {
+  "dur": 35.44006705783739,
+  "events": [
+   [
+    "PED_CONFLICT",
+    6.1,
+    "person#9 on the road next to moving car#2"
+   ],
+   [
+    "PED_CONFLICT",
+    6.1,
+    "person#19 on the road next to moving car#2"
+   ],
+   [
+    "PED_CONFLICT",
+    7.9,
+    "person#26 on the road next to moving motorcycle#31"
+   ],
+   [
+    "PED_CONFLICT",
+    13.9,
+    "person#65 on the road next to moving bus#1"
+   ],
+   [
+    "PED_CONFLICT",
+    22.6,
+    "person#185 on the road next to moving car#76"
+   ],
+   [
+    "ACCIDENT",
+    24.1,
+    "pile-up: #76 and #132 stopped abruptly side by side, held 0.9s"
+   ],
+   [
+    "PED_CONFLICT",
+    30.6,
+    "person#192 on the road next to moving bus#132"
+   ],
+   [
+    "PED_CONFLICT",
+    30.8,
+    "person#214 on the road next to moving car#76"
+   ]
+  ],
+  "boxes": [
+   [
+    "PED_CONFLICT",
+    6.1,
+    [
+     857.0223388671875,
+     210.0254669189453,
+     1086.9344482421875,
+     511.0152893066406
+    ]
+   ],
+   [
+    "PED_CONFLICT",
+    6.1,
+    [
+     575.3939819335938,
+     210.0254669189453,
+     1086.9344482421875,
+     590.858642578125
+    ]
+   ],
+   [
+    "PED_CONFLICT",
+    7.9,
+    [
+     117.66815185546875,
+     270.706298828125,
+     288.9998779296875,
+     539.3072509765625
+    ]
+   ],
+   [
+    "PED_CONFLICT",
+    13.9,
+    [
+     634.0068969726562,
+     38.040260314941406,
+     1136.0723876953125,
+     507.2123718261719
+    ]
+   ],
+   [
+    "PED_CONFLICT",
+    22.6,
+    [
+     353.92041015625,
+     249.15931701660156,
+     552.7354736328125,
+     639.313720703125
+    ]
+   ],
+   [
+    "ACCIDENT",
+    24.1,
+    [
+     370.931884765625,
+     184.9146728515625,
+     1280.0,
+     521.3163452148438
+    ]
+   ],
+   [
+    "PED_CONFLICT",
+    30.6,
+    [
+     1125.4461669921875,
+     224.29432678222656,
+     1280.0,
+     435.273681640625
+    ]
+   ],
+   [
+    "PED_CONFLICT",
+    30.8,
+    [
+     584.029052734375,
+     361.4426574707031,
+     938.3713989257812,
+     719.4943237304688
+    ]
+   ]
+  ]
+ },
+ "h_jam_mumbai": {
+  "dur": 59.99326666666667,
+  "events": [
+   [
+    "JAM",
+    5.9,
+    "traffic jam: 10 of 12 vehicles crawling (< 0.4 body-widths/s) zones=[(1, 0), (4, 0)]"
+   ],
+   [
+    "JAM_ORIGIN",
+    5.9,
+    "queue started here at t=0.9s"
+   ],
+   [
+    "PED_CONFLICT",
+    19.2,
+    "person#63 on the road next to moving bus#30"
+   ],
+   [
+    "ACCIDENT",
+    30.6,
+    "pile-up: #109 and #110 stopped abruptly side by side, held 0.9s"
+   ],
+   [
+    "PED_CONFLICT",
+    30.8,
+    "person#147 on the road next to moving bus#85"
+   ],
+   [
+    "PED_CONFLICT",
+    31.3,
+    "person#132 on the road next to moving car#94"
+   ],
+   [
+    "PED_CONFLICT",
+    38.5,
+    "person#195 on the road next to moving truck#171"
+   ],
+   [
+    "PED_CONFLICT",
+    48.5,
+    "person#252 on the road next to moving motorcycle#249"
+   ],
+   [
+    "ACCIDENT",
+    49.7,
+    "pile-up: #206 and #242 stopped abruptly side by side, held 0.9s"
+   ]
+  ],
+  "boxes": [
+   [
+    "JAM",
+    5.9,
+    null
+   ],
+   [
+    "JAM_ORIGIN",
+    5.9,
+    null
+   ],
+   [
+    "PED_CONFLICT",
+    19.2,
+    [
+     276.6518249511719,
+     129.4549560546875,
+     465.416015625,
+     269.1678466796875
+    ]
+   ],
+   [
+    "ACCIDENT",
+    30.6,
+    [
+     94.45035552978516,
+     160.0446319580078,
+     325.696044921875,
+     236.51229858398438
+    ]
+   ],
+   [
+    "PED_CONFLICT",
+    30.8,
+    [
+     2.331571102142334,
+     117.33446502685547,
+     120.22810363769531,
+     205.2261199951172
+    ]
+   ],
+   [
+    "PED_CONFLICT",
+    31.3,
+    [
+     286.2398986816406,
+     159.36312866210938,
+     408.2485656738281,
+     204.7421417236328
+    ]
+   ],
+   [
+    "PED_CONFLICT",
+    38.5,
+    [
+     242.55580139160156,
+     244.32435607910156,
+     316.1927795410156,
+     331.6586608886719
+    ]
+   ],
+   [
+    "PED_CONFLICT",
+    48.5,
+    [
+     6.475241661071777,
+     233.34291076660156,
+     83.86103057861328,
+     359.5386047363281
+    ]
+   ],
+   [
+    "ACCIDENT",
+    49.7,
+    [
+     297.03668212890625,
+     222.1241912841797,
+     378.88616943359375,
+     256.6524963378906
+    ]
+   ]
+  ]
+ },
+ "h_jam_rushhour": {
+  "dur": 28.987291666666664,
+  "events": [
+   [
+    "PED_CONFLICT",
+    2.7,
+    "person#9 on the road next to moving car#6"
+   ],
+   [
+    "JAM",
+    5.2,
+    "1 congested zone(s), slowest 0 px/s zones=[(0, 0)]"
+   ],
+   [
+    "JAM_ORIGIN",
+    5.2,
+    "queue started here at t=0.2s"
+   ],
+   [
+    "STOPPED",
+    9.3,
+    "car#14 stationary 8.3s in active traffic"
+   ],
+   [
+    "ACCIDENT",
+    10.3,
+    "collision-like overlap IoU=0.26, dv=82px/s, held 1.0s"
+   ],
+   [
+    "JAM",
+    14.3,
+    "1 congested zone(s), slowest 9 px/s zones=[(0, 0)]"
+   ],
+   [
+    "JAM_ORIGIN",
+    14.3,
+    "queue started here at t=9.3s"
+   ],
+   [
+    "PED_CONFLICT",
+    21.3,
+    "person#52 on the road next to moving car#40"
+   ],
+   [
+    "PED_CONFLICT",
+    21.5,
+    "person#51 on the road next to moving car#35"
+   ]
+  ],
+  "boxes": [
+   [
+    "PED_CONFLICT",
+    2.7,
+    [
+     788.1072998046875,
+     322.018798828125,
+     944.796875,
+     381.4942321777344
+    ]
+   ],
+   [
+    "JAM",
+    5.2,
+    null
+   ],
+   [
+    "JAM_ORIGIN",
+    5.2,
+    null
+   ],
+   [
+    "STOPPED",
+    9.3,
+    [
+     309.6169128417969,
+     331.1643981933594,
+     343.42608642578125,
+     358.3447570800781
+    ]
+   ],
+   [
+    "ACCIDENT",
+    10.3,
+    [
+     420.8369445800781,
+     323.7090759277344,
+     521.2520751953125,
+     382.16229248046875
+    ]
+   ],
+   [
+    "JAM",
+    14.3,
+    null
+   ],
+   [
+    "JAM_ORIGIN",
+    14.3,
+    null
+   ],
+   [
+    "PED_CONFLICT",
+    21.3,
+    [
+     739.125244140625,
+     311.2718811035156,
+     910.1204223632812,
+     395.0767822265625
+    ]
+   ],
+   [
+    "PED_CONFLICT",
+    21.5,
+    [
+     1022.9940795898438,
+     307.4118957519531,
+     1223.6304931640625,
+     367.874755859375
+    ]
+   ]
+  ]
+ },
+ "h_jam_trafficcam": {
+  "dur": 50.583866666666665,
+  "events": [
+   [
+    "PED_CONFLICT",
+    30.0,
+    "person#25 on the road next to moving car#26"
+   ]
+  ],
+  "boxes": [
+   [
+    "PED_CONFLICT",
+    30.0,
+    [
+     929.2514038085938,
+     433.6435546875,
+     1126.81103515625,
+     551.583740234375
+    ]
+   ]
+  ]
+ },
+ "h_jam_holiday": {
+  "dur": 16.133333333333333,
+  "events": [],
+  "boxes": []
+ },
+ "h_flow_ipcam": {
+  "dur": 29.96,
+  "events": [
+   [
+    "STOPPED",
+    20.5,
+    "car#1 stationary 20.5s in active traffic"
+   ]
+  ],
+  "boxes": [
+   [
+    "STOPPED",
+    20.5,
+    [
+     248.97119140625,
+     224.31185913085938,
+     523.9963989257812,
+     476.5928955078125
+    ]
+   ]
+  ]
+ },
+ "h_flow_airline_night": {
+  "dur": 59.949230769230766,
+  "events": [
+   [
+    "STOPPED",
+    58.5,
+    "bus#37 stationary 11.0s in active traffic"
+   ]
+  ],
+  "boxes": [
+   [
+    "STOPPED",
+    58.5,
+    [
+     168.5369873046875,
+     109.05535888671875,
+     223.2498016357422,
+     148.2093963623047
+    ]
+   ]
+  ]
+ },
+ "h_flow_cameras": {
+  "dur": 30.933333333333334,
+  "events": [],
+  "boxes": []
+ },
+ "h_stopped_highway": {
+  "dur": 28.5285,
+  "events": [],
+  "boxes": []
+ },
+ "h_ped_hitrun": {
+  "dur": 47.86666666666667,
+  "events": [
+   [
+    "PED_CONFLICT",
+    30.0,
+    "person#42 on the road next to moving car#44"
+   ]
+  ],
+  "boxes": [
+   [
+    "PED_CONFLICT",
+    30.0,
+    [
+     52.60664749145508,
+     118.12178039550781,
+     232.64981079101562,
+     594.8699951171875
+    ]
+   ]
+  ]
+ }
+}

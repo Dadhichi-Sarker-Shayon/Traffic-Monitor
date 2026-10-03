@@ -1,0 +1,519 @@
+{
+ "h_crash_entebbe": {
+  "dur": 48.08136666666667,
+  "persons": 633,
+  "engine": [
+   {
+    "type": "ACCIDENT",
+    "t": 11.5,
+    "detail": "pile-up: #1 and #3 stopped abruptly side by side, held 0.9s",
+    "kept": false,
+    "passthrough": false,
+    "vlm": "No"
+   }
+  ],
+  "scout": [],
+  "vlm_errors": null
+ },
+ "h_crash_pampore": {
+  "dur": 60.0,
+  "persons": 0,
+  "engine": [],
+  "scout": [
+   {
+    "type": "ACCIDENT",
+    "t": 45.0
+   }
+  ],
+  "vlm_errors": null
+ },
+ "h_crash_truckcctv": {
+  "dur": 20.966666666666665,
+  "persons": 204,
+  "engine": [],
+  "scout": [],
+  "vlm_errors": null
+ },
+ "h_crash_pickupcctv": {
+  "dur": 23.356666666666666,
+  "persons": 628,
+  "engine": [
+   {
+    "type": "ACCIDENT",
+    "t": 10.1,
+    "detail": "pile-up: #3 and #5 stopped abruptly side by side, held 0.9s",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes"
+   }
+  ],
+  "scout": [
+   {
+    "type": "ACCIDENT",
+    "t": 9.0
+   }
+  ],
+  "vlm_errors": null
+ },
+ "h_crash_roadtraffic": {
+  "dur": 45.0,
+  "persons": 333,
+  "engine": [
+   {
+    "type": "PED_CONFLICT",
+    "t": 40.3,
+    "detail": "person#81 on the road next to moving car#25",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   }
+  ],
+  "scout": [],
+  "vlm_errors": null
+ },
+ "h_crash_bumpersmall": {
+  "dur": 31.0,
+  "persons": 0,
+  "engine": [
+   {
+    "type": "JAM",
+    "t": 12.3,
+    "detail": "traffic jam: 8 of 9 vehicles crawling (< 0.4 body-widths/s) zones=[(2, 0), (2, 1",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   },
+   {
+    "type": "JAM",
+    "t": 20.7,
+    "detail": "traffic jam: 9 of 10 vehicles crawling (< 0.4 body-widths/s) zones=[(2, 0)]",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   }
+  ],
+  "scout": [
+   {
+    "type": "JAM",
+    "t": 9.0
+   }
+  ],
+  "vlm_errors": null
+ },
+ "h_crash_tbone_bv": {
+  "dur": 26.7,
+  "persons": 322,
+  "engine": [],
+  "scout": [],
+  "vlm_errors": null
+ },
+ "h_crash_intersection_dc": {
+  "dur": 43.166666666666664,
+  "persons": 29,
+  "engine": [],
+  "scout": [],
+  "vlm_errors": null
+ },
+ "h_crash_i71": {
+  "dur": 31.5315,
+  "persons": 86,
+  "engine": [],
+  "scout": [],
+  "vlm_errors": null
+ },
+ "h_crash_tippers": {
+  "dur": 21.666666666666668,
+  "persons": 0,
+  "engine": [],
+  "scout": [],
+  "vlm_errors": null
+ },
+ "h_crash_iowa_stopped": {
+  "dur": 23.5,
+  "persons": 0,
+  "engine": [],
+  "scout": [],
+  "vlm_errors": null
+ },
+ "h_crash_kenya": {
+  "dur": 44.833333333333336,
+  "persons": 0,
+  "engine": [
+   {
+    "type": "STOPPED",
+    "t": 24.3,
+    "detail": "truck#2 stationary 8.0s in active traffic",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   }
+  ],
+  "scout": [],
+  "vlm_errors": null
+ },
+ "h_intersection_surv": {
+  "dur": 48.06666666666667,
+  "persons": 1572,
+  "engine": [
+   {
+    "type": "STOPPED",
+    "t": 16.7,
+    "detail": "car#6 stationary 16.7s in active traffic",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   },
+   {
+    "type": "JAM",
+    "t": 19.9,
+    "detail": "traffic jam: 9 of 11 vehicles crawling (< 0.4 body-widths/s) zones=[]",
+    "kept": false,
+    "passthrough": false,
+    "vlm": "No"
+   },
+   {
+    "type": "STOPPED",
+    "t": 27.5,
+    "detail": "car#4 stationary 27.5s in active traffic",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   },
+   {
+    "type": "STOPPED",
+    "t": 27.9,
+    "detail": "car#8 stationary 27.0s in active traffic",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   }
+  ],
+  "scout": [],
+  "vlm_errors": null
+ },
+ "h_jam_saigon": {
+  "dur": 35.44006705783739,
+  "persons": 15883,
+  "engine": [
+   {
+    "type": "PED_CONFLICT",
+    "t": 6.1,
+    "detail": "person#9 on the road next to moving car#2",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   },
+   {
+    "type": "PED_CONFLICT",
+    "t": 6.1,
+    "detail": "person#19 on the road next to moving car#2",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   },
+   {
+    "type": "PED_CONFLICT",
+    "t": 7.9,
+    "detail": "person#26 on the road next to moving motorcycle#31",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   },
+   {
+    "type": "PED_CONFLICT",
+    "t": 13.9,
+    "detail": "person#65 on the road next to moving bus#1",
+    "kept": false,
+    "passthrough": false,
+    "vlm": "No"
+   },
+   {
+    "type": "PED_CONFLICT",
+    "t": 22.6,
+    "detail": "person#185 on the road next to moving car#76",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   },
+   {
+    "type": "ACCIDENT",
+    "t": 24.1,
+    "detail": "pile-up: #76 and #132 stopped abruptly side by side, held 0.9s",
+    "kept": false,
+    "passthrough": false,
+    "vlm": "No"
+   },
+   {
+    "type": "PED_CONFLICT",
+    "t": 30.6,
+    "detail": "person#192 on the road next to moving bus#132",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   },
+   {
+    "type": "PED_CONFLICT",
+    "t": 30.8,
+    "detail": "person#214 on the road next to moving car#76",
+    "kept": false,
+    "passthrough": false,
+    "vlm": "No"
+   }
+  ],
+  "scout": [
+   {
+    "type": "JAM",
+    "t": 9.0
+   },
+   {
+    "type": "JAM",
+    "t": 33.0
+   }
+  ],
+  "vlm_errors": null
+ },
+ "h_jam_mumbai": {
+  "dur": 59.99326666666667,
+  "persons": 2822,
+  "engine": [
+   {
+    "type": "JAM",
+    "t": 5.9,
+    "detail": "traffic jam: 10 of 12 vehicles crawling (< 0.4 body-widths/s) zones=[(1, 0), (4,",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes"
+   },
+   {
+    "type": "PED_CONFLICT",
+    "t": 19.2,
+    "detail": "person#63 on the road next to moving bus#30",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   },
+   {
+    "type": "ACCIDENT",
+    "t": 30.6,
+    "detail": "pile-up: #109 and #110 stopped abruptly side by side, held 0.9s",
+    "kept": false,
+    "passthrough": false,
+    "vlm": "No"
+   },
+   {
+    "type": "PED_CONFLICT",
+    "t": 30.8,
+    "detail": "person#147 on the road next to moving bus#85",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   },
+   {
+    "type": "PED_CONFLICT",
+    "t": 31.3,
+    "detail": "person#132 on the road next to moving car#94",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   },
+   {
+    "type": "PED_CONFLICT",
+    "t": 38.5,
+    "detail": "person#195 on the road next to moving truck#171",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   },
+   {
+    "type": "PED_CONFLICT",
+    "t": 48.5,
+    "detail": "person#252 on the road next to moving motorcycle#249",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   },
+   {
+    "type": "ACCIDENT",
+    "t": 49.7,
+    "detail": "pile-up: #206 and #242 stopped abruptly side by side, held 0.9s",
+    "kept": false,
+    "passthrough": false,
+    "vlm": "No"
+   }
+  ],
+  "scout": [],
+  "vlm_errors": null
+ },
+ "h_jam_rushhour": {
+  "dur": 28.987291666666664,
+  "persons": 153,
+  "engine": [
+   {
+    "type": "PED_CONFLICT",
+    "t": 2.7,
+    "detail": "person#9 on the road next to moving car#6",
+    "kept": false,
+    "passthrough": false,
+    "vlm": "No"
+   },
+   {
+    "type": "JAM",
+    "t": 5.2,
+    "detail": "1 congested zone(s), slowest 0 px/s zones=[(0, 0)]",
+    "kept": false,
+    "passthrough": false,
+    "vlm": "No"
+   },
+   {
+    "type": "STOPPED",
+    "t": 9.3,
+    "detail": "car#14 stationary 8.3s in active traffic",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   },
+   {
+    "type": "ACCIDENT",
+    "t": 10.3,
+    "detail": "collision-like overlap IoU=0.26, dv=82px/s, held 1.0s",
+    "kept": false,
+    "passthrough": false,
+    "vlm": "No"
+   },
+   {
+    "type": "JAM",
+    "t": 14.3,
+    "detail": "1 congested zone(s), slowest 9 px/s zones=[(0, 0)]",
+    "kept": false,
+    "passthrough": false,
+    "vlm": "No"
+   },
+   {
+    "type": "PED_CONFLICT",
+    "t": 21.3,
+    "detail": "person#52 on the road next to moving car#40",
+    "kept": false,
+    "passthrough": false,
+    "vlm": "No"
+   },
+   {
+    "type": "PED_CONFLICT",
+    "t": 21.5,
+    "detail": "person#51 on the road next to moving car#35",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   }
+  ],
+  "scout": [
+   {
+    "type": "JAM",
+    "t": 9.0
+   }
+  ],
+  "vlm_errors": null
+ },
+ "h_jam_trafficcam": {
+  "dur": 50.583866666666665,
+  "persons": 266,
+  "engine": [
+   {
+    "type": "PED_CONFLICT",
+    "t": 30.0,
+    "detail": "person#25 on the road next to moving car#26",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   }
+  ],
+  "scout": [],
+  "vlm_errors": null
+ },
+ "h_jam_holiday": {
+  "dur": 16.133333333333333,
+  "persons": 76,
+  "engine": [],
+  "scout": [
+   {
+    "type": "JAM",
+    "t": 9.0
+   }
+  ],
+  "vlm_errors": null
+ },
+ "h_flow_ipcam": {
+  "dur": 29.96,
+  "persons": 336,
+  "engine": [
+   {
+    "type": "STOPPED",
+    "t": 20.5,
+    "detail": "car#1 stationary 20.5s in active traffic",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   }
+  ],
+  "scout": [],
+  "vlm_errors": null
+ },
+ "h_flow_airline_night": {
+  "dur": 59.949230769230766,
+  "persons": 1,
+  "engine": [
+   {
+    "type": "STOPPED",
+    "t": 58.5,
+    "detail": "bus#37 stationary 11.0s in active traffic",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   }
+  ],
+  "scout": [
+   {
+    "type": "JAM",
+    "t": 9.0
+   },
+   {
+    "type": "JAM",
+    "t": 33.0
+   },
+   {
+    "type": "ACCIDENT",
+    "t": 45.0
+   }
+  ],
+  "vlm_errors": null
+ },
+ "h_flow_cameras": {
+  "dur": 30.933333333333334,
+  "persons": 259,
+  "engine": [],
+  "scout": [],
+  "vlm_errors": null
+ },
+ "h_stopped_highway": {
+  "dur": 28.5285,
+  "persons": 3,
+  "engine": [],
+  "scout": [],
+  "vlm_errors": null
+ },
+ "h_ped_hitrun": {
+  "dur": 47.86666666666667,
+  "persons": 2832,
+  "engine": [
+   {
+    "type": "PED_CONFLICT",
+    "t": 30.0,
+    "detail": "person#42 on the road next to moving car#44",
+    "kept": true,
+    "passthrough": false,
+    "vlm": "Yes."
+   }
+  ],
+  "scout": [],
+  "vlm_errors": null
+ }
+}
