@@ -403,6 +403,7 @@ realtime-video-tracking/
   eval/
     real/             labels, raw results and REPORT.md of the real-footage evaluation
   notebooks/          three Kaggle fine-tuning notebooks (YOLO, VLM QLoRA, fast classifier)
+  huggingface/        model card, result images and upload script for the fine-tuned YOLO
   weights/            (git-ignored) fine-tuned weights go here
   sample_media/       source clips
   outputs/            annotated videos + event logs from earlier runs
@@ -512,7 +513,7 @@ the old timing back.
 
 | notebook | result |
 |---|---|
-| `01_yolo_finetune_traffic` | YOLOv8s on VisDrone, classes remapped to the COCO ids this project uses. mAP50 0.26 → 0.55 on VisDrone's validation set (drone footage). Roughly twice as many vehicles found on elevated and fixed cameras in a small spot check, **fewer on a dashcam clip** — compare on your own footage before switching. The weights are **not published**; run the notebook to reproduce them. |
+| `01_yolo_finetune_traffic` | YOLOv8s on VisDrone, classes remapped to the COCO ids this project uses. mAP50 0.26 → 0.55 on VisDrone's validation set (drone footage). Roughly twice as many vehicles found on elevated and fixed cameras in a small spot check, **fewer on a dashcam clip** — compare on your own footage before switching. Weights: Hugging Face model repo `ShayonSarker/traffic-monitor-yolov8s-visdrone` (currently **private**; the notebook reproduces them meanwhile). |
 | `02_vlm_crash_qlora` | adapter did **not** help (held-out AUC 0.755 → 0.650); not used. Kept for the method. |
 | `03_crash_classifier_fast` | written and tested on fake data only; **not run on real data**. |
 
