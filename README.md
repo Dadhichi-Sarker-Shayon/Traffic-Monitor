@@ -9,7 +9,7 @@
 ![YOLOv8](https://img.shields.io/badge/YOLOv8-Ultralytics-00B4D8?style=flat-square)
 ![OpenPSG](https://img.shields.io/badge/OpenPSG-scene%20graphs-F77F00?style=flat-square)
 ![Qwen2-VL](https://img.shields.io/badge/Qwen2--VL-optional%20VLM-7B2CBF?style=flat-square)
-![OpenCV](https://img.shields.io/badge/OpenCV-video%20I/O-5C3EE8?style=flat-square&logo=opencv&logoColor=white)
+![OpenCV](https://img.shields.io/badge/OpenCV-video%20input-5C3EE8?style=flat-square&logo=opencv&logoColor=white)
 ![tests](https://img.shields.io/badge/tests-58%20passing-2EA44F?style=flat-square)
 ![evaluated on](https://img.shields.io/badge/evaluated%20on-51%20real%20clips-1F6FEB?style=flat-square)
 ![notebooks](https://img.shields.io/badge/notebooks-Kaggle-20BEFF?style=flat-square&logo=kaggle&logoColor=white)
