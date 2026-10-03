@@ -1,25 +1,83 @@
-# Traffic-Monitor
+<div align="center">
 
-Realtime traffic observer built on **OpenPSG** (PSGTR, ECCV'22). Point it at a
-video file, a webcam or an RTSP stream and it writes back an annotated video and
-a machine-readable event log: tracked vehicles with IDs and speeds, panoptic
-scene-graph masks and relations, congestion zones, and traffic incidents
-(accident, jam, jam origin, queue front, stopped vehicle, pedestrian conflict).
+# 🚦 Traffic-Monitor
 
+### Watches traffic video and reports jams, crashes, stopped vehicles and pedestrian conflicts
+
+![python](https://img.shields.io/badge/python-3.10-3776AB?style=flat-square&logo=python&logoColor=white)
+![PyTorch](https://img.shields.io/badge/PyTorch-1.13%20and%202.x-EE4C2C?style=flat-square&logo=pytorch&logoColor=white)
+![YOLOv8](https://img.shields.io/badge/YOLOv8-Ultralytics-00B4D8?style=flat-square)
+![OpenPSG](https://img.shields.io/badge/OpenPSG-scene%20graphs-F77F00?style=flat-square)
+![Qwen2-VL](https://img.shields.io/badge/Qwen2--VL-optional%20VLM-7B2CBF?style=flat-square)
+![OpenCV](https://img.shields.io/badge/OpenCV-video%20I/O-5C3EE8?style=flat-square&logo=opencv&logoColor=white)
+![tests](https://img.shields.io/badge/tests-58%20passing-2EA44F?style=flat-square)
+![evaluated on](https://img.shields.io/badge/evaluated%20on-51%20real%20clips-1F6FEB?style=flat-square)
+![notebooks](https://img.shields.io/badge/notebooks-Kaggle-20BEFF?style=flat-square&logo=kaggle&logoColor=white)
+![status](https://img.shields.io/badge/status-research%20prototype-F4A261?style=flat-square)
+![license](https://img.shields.io/badge/license-not%20chosen%20yet-9E9E9E?style=flat-square)
+
+</div>
+
+> [!NOTE]
+> **A research prototype, measured honestly.** On 23 held-out real clips it found **4 of 4 traffic jams** with no false
+> alarms, but only **2 of 7 crashes**. The numbers, the method and every limitation are below.
+
+> [!WARNING]
+> Not a safety system. Accident detection is weak, moving-camera (dashcam) footage is mostly out of scope,
+> and it runs at about 1 to 3 frames per second on a GTX 1650, so it is for **recorded video**, not live cameras.
+
+Point it at a video file, a webcam or an RTSP stream and it writes back an **annotated video** and a
+**machine-readable event log**: tracked vehicles with IDs and speeds, scene-graph masks and relations, congestion zones,
+and traffic incidents (jam, jam origin, queue front, accident, stopped vehicle, pedestrian conflict).
+
+## At a glance
+
+| | |
+|---|---|
+| **Input** | video file, webcam index or `rtsp://` stream |
+| **Output** | annotated `.mp4` + `events.jsonl` (every event carries the evidence that fired it) |
+| **Detector / tracker** | YOLOv8 + ByteTrack (optionally a VisDrone fine-tune, see the notebooks) |
+| **Scene understanding** | OpenPSG (PSGTR) panoptic scene graph, run on every N-th frame in a background thread |
+| **Decisions** | a pure-Python rule engine: no GPU, no model, unit-tested on its own |
+| **Second opinion** | optional Qwen2-VL (4-bit): vetoes doubtful events and can propose jams and crashes |
+| **Hardware tested** | one GTX 1650 (4 GB), Windows, 7 GB RAM |
+| **Evidence** | 58 unit tests, plus 51 real YouTube clips (28 development, 23 held-out) |
+
+## Architecture
+
+```mermaid
+flowchart LR
+    SRC(["🎥 video file, webcam or RTSP"]):::io
+    CAP["capture.py<br/>frames and timestamps"]:::core
+    DET["YOLOv8 + ByteTrack<br/>vehicles and people<br/>with persistent IDs"]:::ml
+    MOT["motion.py<br/>pixel motion<br/>inside each box"]:::core
+    PSG["OpenPSG (PSGTR)<br/>road mask and scene graph<br/>background thread"]:::ml
+    ENG{"EventEngine<br/>jam · accident · stopped · pedestrian"}:::engine
+    VET["VLM veto<br/>Qwen2-VL, optional"]:::vlm
+    SCOUT["VLM scout<br/>Qwen2-VL, optional"]:::vlm
+    OUT["overlays.py + JSONL log<br/>annotated video and events"]:::io
+
+    SRC --> CAP
+    CAP --> DET
+    DET --> MOT
+    MOT --> ENG
+    CAP -.->|"every N-th frame"| PSG
+    PSG -->|"road mask"| ENG
+    PSG -.->|"masks and relations"| OUT
+    ENG -->|"fired events"| VET
+    VET -->|"kept events"| OUT
+    CAP -.->|"sampled clean frames"| SCOUT
+    SCOUT -->|"proposed jam or crash"| OUT
+
+    classDef io fill:#1f6feb,stroke:#0b3d91,color:#ffffff
+    classDef core fill:#2ea44f,stroke:#17692f,color:#ffffff
+    classDef ml fill:#f77f00,stroke:#a85500,color:#ffffff
+    classDef engine fill:#d62828,stroke:#7f1717,color:#ffffff
+    classDef vlm fill:#7b2cbf,stroke:#4a1a73,color:#ffffff
 ```
-my_road.mp4 / webcam / rtsp://...
-        │
-        ├── YOLOv8 + ByteTrack ──────────── vehicles & persons, persistent IDs, speeds
-        ├── OpenPSG (PSGTR-R50, ECCV'22) ── panoptic masks + relations, worker thread
-        │        "car driving on road" · "person crossing" · road/pavement/sky stuff
-        ├── EventEngine ─────────────────── jam / jam origin / queue front / accident /
-        │                                   stopped vehicle / pedestrian conflict
-        └── Overlay + JSONL ─────────────── everything burned into the output video
-```
 
-OpenPSG runs on every N-th frame in a background thread, so monitoring stays
-responsive while the scene graph updates. The decision layer is pure logic —
-no GPU, no model — and is unit-tested on its own.
+*Solid arrows run on every frame; dotted arrows are periodic or optional. The decision layer never touches a model:
+it only sees tracked boxes, speeds and (when available) the road mask.*
 
 ---
 
@@ -27,15 +85,24 @@ no GPU, no model — and is unit-tested on its own.
 
 - [Quickstart](#quickstart)
 - [Results on real footage](#results-on-real-footage)
+- [How it works](#how-it-works)
 - [What it detects](#what-it-detects)
+- [How each decision is made](#how-each-decision-is-made)
+- [The optional VLM layer](#the-optional-vlm-layer)
 - [Earlier verified runs](#earlier-verified-runs)
 - [CLI reference](#cli-reference)
 - [Repository layout](#repository-layout)
 - [Environment](#environment)
 - [Testing](#testing)
+- [Evaluation](#evaluation)
+- [Decision log: why the engine is being reworked](#decision-log-why-the-engine-is-being-reworked)
 - [Fine-tuning notebooks and models](#fine-tuning-notebooks-and-models)
+- [Lessons learned](#lessons-learned)
 - [Known limitations](#known-limitations)
+- [Roadmap](#roadmap)
+- [Glossary](#glossary)
 - [Credits](#credits)
+- [License](#license)
 
 ---
 
@@ -86,6 +153,26 @@ tuning (28 other clips were used for development). Method, labels and raw output
 - **Small sample** (7 crash clips, 4 jam clips, 1 pedestrian clip): indicative, not precise. About 1-3 fps on a GTX 1650,
   so this is for offline analysis, not live cameras.
 
+## How it works
+
+1. **Capture.** `capture.py` reads a file, camera or RTSP stream and stamps every frame with a time. Files use the media
+   timestamps (so results do not depend on how fast your machine is); live streams use the wall clock and reconnect if the
+   stream drops.
+2. **Detect and track.** YOLOv8 finds vehicles and people; ByteTrack gives each one an ID that survives short occlusions
+   (a long track buffer and strict re-association keep one car from collecting dozens of IDs).
+3. **Measure motion properly.** Speed is *not* just how far a box centre moved: detector jitter makes a parked car's box
+   wobble. The engine combines the pixel change inside the box (`motion.py`) with the **net displacement over about one
+   second, measured in body-widths per second**, so the same threshold means the same thing at 720p and 4K, close and far.
+4. **Understand the road.** OpenPSG runs in a background thread every N frames and produces a road mask plus a scene graph
+   (`car -[driving on]-> road`). Vehicles that are not on the road (car parks, pavements) are not counted towards congestion.
+5. **Decide.** The `EventEngine` turns tracks over time into events. Every rule uses hysteresis (separate on/off
+   thresholds), a persistence requirement, and a short **confirmation window**: a candidate is only reported if it is still
+   true a moment later, and is withdrawn silently if the evidence falls apart.
+6. **Double-check (optional).** A vision-language model looks at the actual pixels of each fired event and can veto it, and
+   can also scan sampled frames for jams and crashes.
+7. **Write results.** Everything is drawn onto the output video, and each event is logged with an `evidence` dictionary
+   (IoU, speed drop, track ages, ...) so you can see *why* it fired.
+
 ## What it detects
 
 Every rule uses hysteresis (on/off thresholds), a persistence requirement, and
@@ -130,6 +217,109 @@ seen from above, neighbouring cars overlap for a frame or two constantly —
 detector box jitter, tracker ID swaps — and firing on the first overlapping
 frame produced two phantom accidents on the aerial clip. Requiring the overlap
 to hold removed both.
+
+## How each decision is made
+
+### Jam
+
+```mermaid
+flowchart TD
+    A["Each frame: vehicles that are on the road<br/>and have been tracked for at least 1 s"] --> B["Net speed over about 1 s,<br/>in body-widths per second"]
+    B --> C{"At least 8 vehicles and<br/>65 percent or more crawling<br/>(below 0.4 widths per s)?"}
+    C -->|no| N["No jam this frame"]
+    C -->|yes| D{"Held for 4 s?"}
+    D -->|no| N
+    D -->|yes| E["JAM, confirmed 1 s later"]
+    E --> F["JAM_ORIGIN: the zone where the queue began<br/>JAM_FRONT: the flowing zone next to it"]
+    E -.-> G["Accident-by-overlap is switched off:<br/>bumpers touch in a queue"]
+    classDef good fill:#2ea44f,stroke:#17692f,color:#ffffff
+    classDef bad fill:#6c757d,stroke:#343a40,color:#ffffff
+    class E,F good
+    class N bad
+```
+
+If at least four cars are present, only cars vote: motorbikes filter through queues at speed and would hide a jam.
+
+### Accident
+
+```mermaid
+flowchart TD
+    A["Pair of vehicle tracks"] --> B{"Boxes overlap (IoU 0.25 or more),<br/>both now slow, recently fast?"}
+    B -->|no| X["Nothing"]
+    B -->|yes| C{"Both tracks at least 1.5 s old when contact began,<br/>and speeds physically plausible?"}
+    C -->|no| X
+    C -->|yes| D{"Abrupt deceleration:<br/>25 px/s or more within 0.5 s?"}
+    D -->|no| Y["Merge or queue bumper, ignored"]
+    D -->|yes| E{"Held for 0.6 s and still there<br/>0.3 s later?"}
+    E -->|no| X
+    E -->|yes| F["ACCIDENT"]
+    P["Pile-up rule: 2 or more vehicles each lost<br/>65 percent of a fast speed abruptly, now side by side,<br/>tracks at least 3 s old"] --> E
+    S["Skipped while the whole road is crawling"] -.-> B
+    classDef good fill:#d62828,stroke:#7f1717,color:#ffffff
+    classDef bad fill:#6c757d,stroke:#343a40,color:#ffffff
+    class F good
+    class X,Y bad
+```
+
+Overlap alone is not a crash: two cars parking side by side, a tracker ID swap, or a perspective overlap of two distant
+cars all look the same in a single frame. That is why the rule asks for a sudden speed drop, established tracks and a
+sustained overlap.
+
+### Pedestrian conflict
+
+```mermaid
+flowchart TD
+    A["Person track"] --> B{"Older than 0.5 s and<br/>a tall box (not a seated rider)?"}
+    B -->|no| X["Ignore"]
+    B -->|yes| C{"Sitting on or next to a<br/>bicycle or motorbike?"}
+    C -->|yes| R["It is a rider: ignore"]
+    C -->|no| D{"Feet on the road<br/>(road mask)?"}
+    D -->|no| X
+    D -->|yes| E{"A vehicle within one body-height<br/>that is really moving?"}
+    E -->|no| X
+    E -->|yes| F{"True for 0.4 s of real time and no<br/>alert nearby in the last 5 s?"}
+    F -->|no| X
+    F -->|yes| G["PED_CONFLICT"]
+    classDef good fill:#f77f00,stroke:#a85500,color:#ffffff
+    classDef bad fill:#6c757d,stroke:#343a40,color:#ffffff
+    class G good
+    class X,R bad
+```
+
+### Stopped vehicle
+
+A vehicle that stays still for 8 s while the rest of the road is flowing. It is suppressed inside jams and nose-to-tail
+queues. Without the OpenPSG road mask it also fires on kerbside parked cars (a known weakness, see the limitations).
+
+## The optional VLM layer
+
+```mermaid
+sequenceDiagram
+    participant E as EventEngine
+    participant M as Main loop
+    participant V as Qwen2-VL (4-bit)
+    E->>M: event fired, for example ACCIDENT
+    M->>V: clean frame and a yes/no question
+    V-->>M: Yes or No
+    alt Yes
+        M->>M: keep and log the event
+    else No
+        M->>E: retract the event (logged as a veto)
+    end
+    loop every few seconds of video
+        M->>V: whole frame: is a crash happening? is the road jammed?
+        V-->>M: answers
+        Note over M,V: two consecutive Yes answers raise an event
+    end
+```
+
+- The model always sees the **clean** frame, never one covered in overlays. Crash and jam questions use the whole frame
+  (a tight crop of two distant cars hides the road and the wreckage); pedestrian and stopped-vehicle questions use a crop.
+- It runs as a **separate process** when needed, because OpenPSG pins an old torch while Qwen2-VL needs a modern one.
+- If the model is missing or answers something unparseable, the event passes through unchanged: the VLM can only *remove*
+  an alert it was shown, and the scout is the only place it can create one.
+- Measured effect on held-out clips: the scout lifted jam recall from 2 of 4 to 4 of 4; the veto removed false alarms but
+  also one real crash. A QLoRA fine-tune of the VLM made it *worse* and was dropped (see below).
 
 ## Earlier verified runs
 
@@ -354,6 +544,49 @@ After running notebook 01, try the fine-tuned detector: `python -m traffic_watch
 - Speeds are in pixels per second unless `--px-per-meter` calibration is given.
 - The OpenPSG dependency chain (mmcv 1.x / mmdet 2.x / torch 1.13) is pinned to
   an older CUDA stack; newer GPUs need a rebuild of those wheels.
+
+## Lessons learned
+
+These came from measuring, not from guessing, and each one changed the code:
+
+- **Measure before you tune.** The repository started with zero labelled real footage, so no rule change could be judged.
+  Building the labelling and scoring loop first is what exposed that early "it works" results came from a handful of clips.
+- **Displacement is not motion.** Detector jitter made parked cars look like they were moving at 50 px/s, and the same
+  pixel threshold meant different things at 720p and 4K. Net displacement in body-widths per second fixed both.
+- **Riders look like pedestrians.** Most early pedestrian alerts were people riding motorbikes (the detector reports the
+  rider and the bike separately). Excluding anything on or next to a two-wheeler cut 19 alerts to 1 on one clip.
+- **A track ID is not a vehicle.** The tracker gave one car dozens of IDs. Long buffers and strict matching helped, and the
+  accident rule now only trusts tracks that were established when contact began and rejects physically impossible speeds.
+- **Fine-tuning is not automatically better.** The YOLO fine-tune improved its own benchmark (mAP50 0.26 to 0.55), but
+  the VLM fine-tune scored *worse* on held-out data. Public crash datasets turned out to be near-identical video frames,
+  which made the first "improvement" a leak. A perceptual-hash check now removes near-copies before scoring.
+- **Silent failures are the dangerous ones.** A path assumption wrote every training label as empty and a time option
+  stretched training to fill the whole budget. Both ran without errors. The notebooks now count boxes before training and
+  stop themselves on the clock instead.
+- **Report what failed.** Accident recall is 2 of 7 and the README says so.
+
+## Roadmap
+
+- Re-score stopped vehicles and pedestrians **with OpenPSG on** (needs a machine with more RAM than the 7 GB used here).
+- Label 30+ more real crash clips: the accident numbers currently rest on 7.
+- Compare the fine-tuned YOLO against the stock model on the full evaluation, not just a spot check.
+- Make the VLM veto less likely to remove real crashes (a second question, or two "no" answers).
+- Ego-motion handling for moving cameras, and a proper low-speed-contact rule.
+
+## Glossary
+
+| term | meaning |
+|---|---|
+| **IoU** | intersection over union: how much two boxes overlap (0 none, 1 identical) |
+| **ByteTrack** | the tracker that keeps an ID on each object from frame to frame |
+| **Body-width per second** | speed measured in units of the vehicle's own width, so near and far objects compare fairly |
+| **Hysteresis** | different thresholds for switching an event on and off, so it does not flicker |
+| **Confirmation window** | a candidate event must still hold a moment later to be reported |
+| **OpenPSG / PSGTR** | panoptic scene-graph model: masks plus relations such as "car driving on road" |
+| **VLM** | vision-language model; here Qwen2-VL answers yes/no questions about an image |
+| **QLoRA** | fine-tuning a 4-bit model through small adapter weights |
+| **mAP50 / mAP50-95** | standard detector accuracy scores (higher is better) |
+| **Held-out set** | clips labelled and scored once, never used to tune the rules |
 
 ## Credits
 
