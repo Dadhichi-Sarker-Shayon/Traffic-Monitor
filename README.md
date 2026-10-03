@@ -513,7 +513,7 @@ the old timing back.
 
 | notebook | result |
 |---|---|
-| `01_yolo_finetune_traffic` | YOLOv8s on VisDrone, classes remapped to the COCO ids this project uses. mAP50 0.26 → 0.55 on VisDrone's validation set (drone footage). Roughly twice as many vehicles found on elevated and fixed cameras in a small spot check, **fewer on a dashcam clip** — compare on your own footage before switching. Weights: Hugging Face model repo `ShayonSarker/traffic-monitor-yolov8s-visdrone` (currently **private**; the notebook reproduces them meanwhile). |
+| `01_yolo_finetune_traffic` | YOLOv8s on VisDrone, classes remapped to the COCO ids this project uses. mAP50 0.26 → 0.55 on VisDrone's validation set (drone footage). Roughly twice as many vehicles found on elevated and fixed cameras in a small spot check, **fewer on a dashcam clip** — compare on your own footage before switching. Weights: [Hugging Face model repo](https://huggingface.co/ShayonSarker/traffic-monitor-yolov8s-visdrone) (model card, training log and a demo video; the notebook reproduces them). |
 | `02_vlm_crash_qlora` | adapter did **not** help (held-out AUC 0.755 → 0.650); not used. Kept for the method. |
 | `03_crash_classifier_fast` | written and tested on fake data only; **not run on real data**. |
 

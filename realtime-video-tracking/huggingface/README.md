@@ -71,6 +71,11 @@ Improvement was steady and had flattened by epoch 25-26; Ultralytics keeps the b
 shipped weights. The final re-validation above (0.553 / 0.333) differs slightly from the in-training log because it
 re-runs validation with the maximum detections raised to match the densest image (up to 902 objects).
 
+## Demo videos
+
+`demos/` has an annotated demo of the Traffic-Monitor pipeline on a scripted synthetic scene, with its event log. **It was made with the stock YOLOv8s detector, not with these weights**, and shows the decision rules rather than
+this model. Details and caveats: [`demos/README.md`](demos/README.md).
+
 ## Limitations — please read
 
 - **Domain:** trained only on drone footage. In a small spot check on 24 frames, it found about twice as many vehicles
@@ -118,4 +123,5 @@ remapping). Reproduce with `notebooks/01_yolo_finetune_traffic.ipynb` in the Git
 | `training/curves/` | F1, precision and recall curves against confidence |
 | `training/samples/` | validation images with the true boxes (`*_labels`) and this model's predictions (`*_pred`) |
 | `training/labels.jpg` | distribution of the remapped training labels |
+| `demos/` | an annotated pipeline demo (synthetic scene) made with the stock detector, plus its event log |
 | `assets/` | confusion matrix, training curves, PR curve and results used on this page |
